@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Urhox UI Editor</title>
+  <link rel="stylesheet" href="src/style.css" />
+</head>
+<body>
+  <div class="editor">
+    <header class="toolbar">
+      <div class="toolbar-left">
+        <strong>Urhox UI Editor</strong>
+        <button id="openProjectBtn" type="button">打开项目</button>
+        <input id="folderInput" type="file" webkitdirectory multiple hidden />
+        <span id="projectName" class="muted">未打开项目 · 内置示例</span>
+      </div>
+      <div class="toolbar-right">
+        <label><input id="overlayToggle" type="checkbox" /> 布局框</label>
+        <span id="meta" class="muted"></span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="hierarchy">
+        <div class="panel-title">Hierarchy</div>
+        <div id="tree" class="tree"></div>
+      </aside>
+
+      <main class="preview">
+        <canvas id="stage" width="720" height="1280"></canvas>
+      </main>
+
+      <aside class="inspector">
+        <div class="panel-title">Inspector</div>
+        <div id="inspector" class="inspector-body">
+          <p class="muted">选中一个节点后显示属性</p>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="project-bar">
+      <div class="panel-title">Project / UI</div>
+      <div id="projectFiles" class="project-files">
+        <p class="muted">打开 UrhoX 项目后，会按目录列出 <code>.ui.json</code></p>
+      </div>
+    </footer>
+  </div>
+
+  <script src="src/yoga-lite.js"></script>
+  <script src="src/inspector.js"></script>
+  <script src="src/preview.js"></script>
+  <script src="src/editor.js"></script>
+</body>
+</html>
