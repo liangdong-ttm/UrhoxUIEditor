@@ -168,6 +168,27 @@
       panY = (preview.clientHeight - canvas.height * zoom) / 2;
       applyView();
     },
+    fitSelected: function () {
+      if (!preview || !canvas || !window.UrhoxPreview) return;
+      var box = window.UrhoxPreview.selectionBounds && window.UrhoxPreview.selectionBounds();
+      if (!box) {
+        fitPreview();
+        return;
+      }
+      var originX = Number(canvas.dataset.originX || 0);
+      var originY = Number(canvas.dataset.originY || 0);
+      var fit = window.UrhoxPreview.contentTransform ? window.UrhoxPreview.contentTransform() : { x: 0, y: 0, scale: 1 };
+      var sx = originX + fit.x + box.x * fit.scale;
+      var sy = originY + fit.y + box.y * fit.scale;
+      var sw = box.w * fit.scale;
+      var sh = box.h * fit.scale;
+      var pad = 64;
+      var z = Math.min((preview.clientWidth - pad) / sw, (preview.clientHeight - pad) / sh, 8);
+      zoom = Math.max(0.08, z);
+      panX = (preview.clientWidth - sw * zoom) / 2 - sx * zoom;
+      panY = (preview.clientHeight - sh * zoom) / 2 - sy * zoom;
+      applyView();
+    },
     zoomBy: function (factor) {
       if (!preview) return;
       var rect = preview.getBoundingClientRect();

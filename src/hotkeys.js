@@ -87,6 +87,16 @@
       api.deselect();
       return;
     }
+    if (key === "Enter" && shift) {
+      event.preventDefault();
+      api.selectParent && api.selectParent();
+      return;
+    }
+    if (key === "Enter") {
+      event.preventDefault();
+      api.selectChild && api.selectChild();
+      return;
+    }
     if (key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown") {
       event.preventDefault();
       var step = shift ? 10 : 1;

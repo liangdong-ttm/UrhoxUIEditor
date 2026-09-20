@@ -24,7 +24,9 @@
   var currentTree = null;
   var currentPath = DEFAULT_UI;
   var selectedNode = null;
+  var selectedNodes = [];
   var hoverNode = null;
+  var marquee = null;
   var collapsed = {};
   var nodeSeq = 0;
   var pendingImages = 0;
@@ -380,15 +382,42 @@
     drawDeviceChrome();
     ctx.setTransform(1, 0, 0, 1, o.x + fit.x, o.y + fit.y);
     ctx.scale(fit.scale, fit.scale);
-    if (hoverNode && hoverNode !== selectedNode && hoverNode._layout && !hoverNode._hidden) {
-      if (!lockedFromTree || hoverNode === selectedNode) drawOverlay(hoverNode, "hover");
+    if (hoverNode && selectedNodes.indexOf(hoverNode) < 0 && hoverNode._layout && !hoverNode._hidden) {
+      if (!lockedFromTree || hoverNode === selectedNode) {
+        drawOverlay(hoverNode, "hover");
+        drawHoverName(hoverNode);
+      }
     }
+    selectedNodes.forEach(function (node) {
+      if (node && node._layout && !node._hidden && node !== selectedNode) drawOverlay(node, "hover");
+    });
     if (selectedNode && selectedNode._layout && !selectedNode._hidden) {
       drawOverlay(selectedNode, "selected");
-      if (drag) drawSizeBadge(selectedNode);
+      if (drag && drag.mode !== "marquee") drawSizeBadge(selectedNode);
     }
+    drawMarquee();
     drawGuides();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  function drawHoverName(node) {
+    if (!node || !node._layout) return;
+    var label = nodeLabel(node);
+    var text = (label.typeName + (label.name ? " " + label.name : "")).trim();
+    if (label.extra) text += "  " + label.extra;
+    drawLabel(text, node._layout.x + node._layout.w / 2, node._layout.y - 12);
+  }
+
+  function drawMarquee() {
+    if (!marquee) return;
+    var box = window.UrhoxGeom.rect(marquee.x, marquee.y, marquee.w, marquee.h);
+    ctx.save();
+    ctx.fillStyle = "rgba(13, 153, 255, 0.12)";
+    ctx.strokeStyle = FIGMA_BLUE;
+    ctx.lineWidth = screenLine(1);
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.strokeRect(box.x + 0.5, box.y + 0.5, Math.max(0, box.w - 1), Math.max(0, box.h - 1));
+    ctx.restore();
   }
 
   function nodeKey(node) {
@@ -419,7 +448,7 @@
     var isCollapsed = !!collapsed[key];
     var row = document.createElement("button");
     row.type = "button";
-    row.className = "tree-row" + (node === selectedNode ? " selected" : "") + (node._hidden ? " hidden-node" : "");
+    row.className = "tree-row" + (selectedNodes.indexOf(node) >= 0 ? " selected" : "") + (node._hidden ? " hidden-node" : "");
     row.style.paddingLeft = (6 + depth * 14) + "px";
     row.dataset.key = key;
 
@@ -454,7 +483,7 @@
         renderTreePanel();
         return;
       }
-      selectNode(node, true);
+      selectNode(node, true, event.shiftKey);
     });
 
     treeEl.appendChild(row);
@@ -561,13 +590,66 @@
     return found;
   }
 
-  function selectNode(node, fromTree) {
-    selectedNode = node;
-    lockedFromTree = !!fromTree && !!node;
+  function isSelected(node) {
+    return selectedNodes.indexOf(node) >= 0;
+  }
+
+  function setSelection(nodes, fromTree) {
+    selectedNodes = [];
+    (nodes || []).forEach(function (node) {
+      if (node && selectedNodes.indexOf(node) < 0) selectedNodes.push(node);
+    });
+    selectedNode = selectedNodes.length ? selectedNodes[selectedNodes.length - 1] : null;
+    lockedFromTree = !!fromTree && !!selectedNode;
     hoverNode = null;
     renderTreePanel();
     renderInspector();
     if (currentTree) drawTree(currentTree);
+  }
+
+  function selectNode(node, fromTree, additive) {
+    if (!node) {
+      setSelection([], false);
+      return;
+    }
+    if (additive) {
+      if (isSelected(node)) {
+        selectedNodes = selectedNodes.filter(function (n) { return n !== node; });
+        selectedNode = selectedNodes[selectedNodes.length - 1] || null;
+      } else {
+        selectedNodes.push(node);
+        selectedNode = node;
+      }
+      lockedFromTree = !!fromTree;
+      renderTreePanel();
+      renderInspector();
+      if (currentTree) drawTree(currentTree);
+      return;
+    }
+    setSelection([node], fromTree);
+  }
+
+  function deepestChildAt(parent, x, y) {
+    var hit = null;
+    function walk(node) {
+      var box = node._layout;
+      if (!box || node._hidden) return;
+      if (x >= box.x && y >= box.y && x <= box.x + box.w && y <= box.y + box.h) {
+        if (node !== parent) hit = node;
+        (node.children || []).forEach(walk);
+      }
+    }
+    (parent.children || []).forEach(walk);
+    return hit;
+  }
+
+  function nodesInMarquee(box) {
+    var hits = [];
+    window.UrhoxYoga.walk(currentTree, function (node) {
+      if (!node._layout || node._hidden || node === currentTree) return;
+      if (window.UrhoxGeom.intersects(box, node._layout)) hits.push(node);
+    });
+    return hits;
   }
 
   function serializableTree(node) {
@@ -595,6 +677,7 @@
     layoutNow();
     ensureNodeKeys(currentTree);
     selectedNode = snap.selectedId ? findById(currentTree, snap.selectedId) : null;
+    selectedNodes = selectedNode ? [selectedNode] : [];
     lockedFromTree = false;
     renderTreePanel();
     renderInspector();
@@ -657,94 +740,137 @@
     if (currentTree && !drag) drawTree(currentTree);
   });
 
+  canvas.addEventListener("dblclick", function (event) {
+    if (!currentTree) return;
+    var p = canvasPoint(event);
+    var target = selectedNode || pickNodeAt(p.x, p.y);
+    if (!target) return;
+    var child = deepestChildAt(target, p.x, p.y);
+    if (child) selectNode(child, false);
+  });
+
   canvas.addEventListener("pointerdown", function (event) {
     if (!currentTree || event.button !== 0) return;
     if (window.UrhoxView && window.UrhoxView.isSpaceDown()) return;
     event.preventDefault();
     var p = canvasPoint(event);
     var handle = hitHandle(p.x, p.y);
-    var hit;
-    if (lockedFromTree && selectedNode) {
-      hit = selectedNode;
-    } else {
-      hit = handle ? selectedNode : pickNodeAt(p.x, p.y);
+    if (handle && selectedNode) {
+      beginMoveOrResize(selectedNode, handle.id, p, event);
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+    var hit = pickNodeAt(p.x, p.y);
+    if (lockedFromTree && selectedNode && !event.shiftKey) {
+      beginMoveOrResize(selectedNode, "move", p, event);
+      canvas.setPointerCapture(event.pointerId);
+      return;
     }
     if (!hit) {
-      if (lockedFromTree) return;
-      selectNode(null);
+      drag = { mode: "marquee", startX: p.x, startY: p.y, additive: event.shiftKey, seed: selectedNodes.slice() };
+      marquee = { x: p.x, y: p.y, w: 0, h: 0 };
+      canvas.setPointerCapture(event.pointerId);
+      drawTree(currentTree);
       return;
     }
     if (hit.locked) return;
-    if (hit !== selectedNode) selectNode(hit, false);
-    var box = hit._layout;
+    if (event.shiftKey) selectNode(hit, false, true);
+    else if (!isSelected(hit)) selectNode(hit, false);
+    beginMoveOrResize(hit, "move", p, event);
+    canvas.setPointerCapture(event.pointerId);
+  });
+
+  function beginMoveOrResize(node, mode, p, event) {
+    var box = node._layout;
     if (!box) return;
     pushHistory();
     drag = {
-      node: hit,
-      mode: handle ? handle.id : "move",
+      node: node,
+      mode: mode,
       startX: p.x,
       startY: p.y,
       origX: box.x,
       origY: box.y,
       origW: box.w,
       origH: box.h,
-      duplicate: event.altKey,
+      origs: selectedNodes.filter(function (n) { return n && n._layout; }).map(function (n) {
+        return { node: n, x: n._layout.x, y: n._layout.y, w: n._layout.w, h: n._layout.h };
+      }),
+      duplicate: event.altKey && mode === "move",
     };
     if (drag.duplicate) {
-      var copy = cloneForPaste(hit);
-      var parent = parentOf(currentTree, hit) || currentTree;
-      parent.children = parent.children || [];
-      parent.children.push(copy);
+      var copies = [];
+      drag.origs.forEach(function (item) {
+        var copy = cloneForPaste(item.node);
+        var parent = parentOf(currentTree, item.node) || currentTree;
+        parent.children = parent.children || [];
+        parent.children.push(copy);
+        copies.push(copy);
+      });
       layoutNow();
       ensureNodeKeys(currentTree);
-      selectedNode = copy;
-      drag.node = copy;
+      setSelection(copies);
+      drag.node = selectedNode;
+      drag.origs = selectedNodes.filter(function (n) { return n && n._layout; }).map(function (n) {
+        return { node: n, x: n._layout.x, y: n._layout.y, w: n._layout.w, h: n._layout.h };
+      });
     }
-    canvas.setPointerCapture(event.pointerId);
-  });
+  }
 
   canvas.addEventListener("pointermove", function (event) {
     if (!drag) return;
     var p = canvasPoint(event);
     var dx = p.x - drag.startX;
     var dy = p.y - drag.startY;
-    var x = drag.origX;
-    var y = drag.origY;
-    var w = drag.origW;
-    var h = drag.origH;
+    if (drag.mode === "marquee") {
+      marquee = { x: drag.startX, y: drag.startY, w: dx, h: dy };
+      var box = window.UrhoxGeom.rect(marquee.x, marquee.y, marquee.w, marquee.h);
+      var hits = nodesInMarquee(box);
+      setSelection(drag.additive ? drag.seed.concat(hits) : hits);
+      marquee = { x: drag.startX, y: drag.startY, w: dx, h: dy };
+      drawTree(currentTree);
+      return;
+    }
     var mode = drag.mode;
     if (event.shiftKey && mode === "move") {
       if (Math.abs(dx) > Math.abs(dy)) dy = 0;
       else dx = 0;
     }
     if (mode === "move") {
-      x += dx;
-      y += dy;
+      (drag.origs || [{ node: drag.node, x: drag.origX, y: drag.origY, w: drag.origW, h: drag.origH }]).forEach(function (item) {
+        applyRect(item.node, item.x + dx, item.y + dy, item.w, item.h);
+      });
     } else {
-      if (mode.indexOf("w") >= 0) { x += dx; w -= dx; }
-      if (mode.indexOf("e") >= 0) { w += dx; }
-      if (mode.indexOf("n") >= 0) { y += dy; h -= dy; }
-      if (mode.indexOf("s") >= 0) { h += dy; }
+      var next = window.UrhoxGeom.resizeRect(
+        { x: drag.origX, y: drag.origY, w: drag.origW, h: drag.origH },
+        mode, dx, dy, { shift: event.shiftKey, alt: event.altKey }
+      );
+      applyRect(drag.node, next.x, next.y, next.w, next.h);
     }
-    if (w < 1) { x += w - 1; w = 1; }
-    if (h < 1) { y += h - 1; h = 1; }
     guides = [];
     var lines = collectSnapLines(drag.node);
     if (mode === "move") {
+      var box = drag.node._layout;
+      var x = box.x, y = box.y, w = box.w, h = box.h;
       var nx = snapValue(x, lines.xs, "x", guides);
       var ny = snapValue(y, lines.ys, "y", guides);
       var nxc = snapValue(x + w / 2, lines.xs, "x", guides);
       var nyc = snapValue(y + h / 2, lines.ys, "y", guides);
       var nr = snapValue(x + w, lines.xs, "x", guides);
       var nb = snapValue(y + h, lines.ys, "y", guides);
-      if (Math.abs(nx - x) <= SNAP) x = nx;
-      else if (Math.abs(nxc - (x + w / 2)) <= SNAP) x = nxc - w / 2;
-      else if (Math.abs(nr - (x + w)) <= SNAP) x = nr - w;
-      if (Math.abs(ny - y) <= SNAP) y = ny;
-      else if (Math.abs(nyc - (y + h / 2)) <= SNAP) y = nyc - h / 2;
-      else if (Math.abs(nb - (y + h)) <= SNAP) y = nb - h;
+      var sx = 0, sy = 0;
+      if (Math.abs(nx - x) <= SNAP) sx = nx - x;
+      else if (Math.abs(nxc - (x + w / 2)) <= SNAP) sx = nxc - (x + w / 2);
+      else if (Math.abs(nr - (x + w)) <= SNAP) sx = nr - (x + w);
+      if (Math.abs(ny - y) <= SNAP) sy = ny - y;
+      else if (Math.abs(nyc - (y + h / 2)) <= SNAP) sy = nyc - (y + h / 2);
+      else if (Math.abs(nb - (y + h)) <= SNAP) sy = nb - (y + h);
+      if (sx || sy) {
+        (drag.origs || []).forEach(function (item) {
+          applyRect(item.node, item.node.left + sx, item.node.top + sy, item.node.width, item.node.height);
+        });
+      }
     }
-    applyRect(drag.node, x, y, w, h);
     layoutNow();
     drawTree(currentTree);
   });
@@ -752,6 +878,7 @@
   canvas.addEventListener("pointerup", function () {
     if (!drag) return;
     drag = null;
+    marquee = null;
     guides = [];
     if (currentTree) drawTree(currentTree);
     renderInspector();
@@ -773,6 +900,8 @@
     drag = null;
     lockedFromTree = false;
     selectedNode = null;
+    selectedNodes = [];
+    marquee = null;
     history = new window.UrhoxHistory.History(80);
     resizeCanvas();
     layoutNow();
@@ -892,6 +1021,7 @@
     get selected() { return selectedNode; },
     get tree() { return currentTree; },
     getJSON: function () { return serializableTree(currentTree); },
+    contentTransform: contentTransform,
     markClean: markClean,
     undo: function () {
       restoreSnapshot(history.undo(currentTree, selectedNode && (selectedNode.id || selectedNode._key)));
@@ -911,6 +1041,19 @@
     toggleLocked: toggleLocked,
     rename: renameSelected,
     deselect: function () { lockedFromTree = false; selectNode(null); },
+    selectParent: function () {
+      if (!selectedNode) return;
+      var parent = parentOf(currentTree, selectedNode);
+      if (parent && parent !== currentTree) selectNode(parent);
+    },
+    selectChild: function () {
+      if (!selectedNode || !selectedNode.children || !selectedNode.children.length) return;
+      selectNode(selectedNode.children[0]);
+    },
+    getSelection: function () { return selectedNodes.slice(); },
+    selectionBounds: function () {
+      return window.UrhoxGeom.boundsOf(selectedNodes.map(function (n) { return n._layout; }).filter(Boolean));
+    },
     setDevice: setDevice,
   };
 
