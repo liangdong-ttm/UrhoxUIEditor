@@ -49,6 +49,9 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 }
 .ghost.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
 .muted { color: var(--muted); font-size: 12px; }
+.align-bar { display: flex; gap: 4px; margin-left: 8px; }
+.align-bar .ghost { padding: 4px 6px; font-size: 11px; }
+.tree-row.drop-target { outline: 1px dashed #0d99ff; }
 .dirty-badge {
   background: #c2410c;
   color: #fff;

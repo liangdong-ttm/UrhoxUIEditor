@@ -16,6 +16,18 @@
         <input id="folderInput" type="file" webkitdirectory multiple hidden />
         <span id="projectName" class="muted">未打开项目 · 内置示例</span>
         <span id="dirtyBadge" class="dirty-badge hidden">未保存</span>
+        <div class="align-bar">
+          <button type="button" class="ghost" data-align="left" title="左对齐">左</button>
+          <button type="button" class="ghost" data-align="hcenter" title="水平居中">中</button>
+          <button type="button" class="ghost" data-align="right" title="右对齐">右</button>
+          <button type="button" class="ghost" data-align="top" title="顶对齐">顶</button>
+          <button type="button" class="ghost" data-align="vcenter" title="垂直居中">直中</button>
+          <button type="button" class="ghost" data-align="bottom" title="底对齐">底</button>
+          <button type="button" class="ghost" data-dist="x" title="水平均分">均分H</button>
+          <button type="button" class="ghost" data-dist="y" title="垂直均分">均分V</button>
+          <button type="button" class="ghost" id="groupBtn" title="编组 ⌘G">编组</button>
+          <button type="button" class="ghost" id="ungroupBtn" title="解组 ⇧⌘G">解组</button>
+        </div>
       </div>
       <div class="toolbar-right">
         <label class="device-label">预览屏幕

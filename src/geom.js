@@ -87,10 +87,61 @@
     return { x: x, y: y, w: w, h: h };
   }
 
+  function alignRects(rects, mode) {
+    if (!rects || !rects.length) return rects;
+    var b = boundsOf(rects);
+    return rects.map(function (r) {
+      var n = { x: r.x, y: r.y, w: r.w, h: r.h };
+      if (mode === "left") n.x = b.x;
+      if (mode === "right") n.x = b.x + b.w - r.w;
+      if (mode === "hcenter") n.x = b.x + (b.w - r.w) / 2;
+      if (mode === "top") n.y = b.y;
+      if (mode === "bottom") n.y = b.y + b.h - r.h;
+      if (mode === "vcenter") n.y = b.y + (b.h - r.h) / 2;
+      return n;
+    });
+  }
+
+  function distributeRects(rects, axis) {
+    if (!rects || rects.length < 3) return rects;
+    var sorted = rects.map(function (r, i) { return { r: r, i: i }; });
+    sorted.sort(function (a, b) {
+      return axis === "x" ? a.r.x - b.r.x : a.r.y - b.r.y;
+    });
+    var first = sorted[0].r;
+    var last = sorted[sorted.length - 1].r;
+    var start = axis === "x" ? first.x : first.y;
+    var end = axis === "x" ? last.x + last.w : last.y + last.h;
+    var size = sorted.reduce(function (s, item) { return s + (axis === "x" ? item.r.w : item.r.h); }, 0);
+    var gap = (end - start - size) / (sorted.length - 1);
+    var cursor = start;
+    var out = rects.slice();
+    sorted.forEach(function (item) {
+      var n = { x: item.r.x, y: item.r.y, w: item.r.w, h: item.r.h };
+      if (axis === "x") n.x = cursor;
+      else n.y = cursor;
+      out[item.i] = n;
+      cursor += (axis === "x" ? item.r.w : item.r.h) + gap;
+    });
+    return out;
+  }
+
+  function spacing(a, b) {
+    var dx = 0, dy = 0;
+    if (a.x + a.w < b.x) dx = b.x - (a.x + a.w);
+    else if (b.x + b.w < a.x) dx = a.x - (b.x + b.w);
+    if (a.y + a.h < b.y) dy = b.y - (a.y + a.h);
+    else if (b.y + b.h < a.y) dy = a.y - (b.y + b.h);
+    return { dx: dx, dy: dy };
+  }
+
   root.UrhoxGeom = {
     rect: rect,
     intersects: intersects,
     boundsOf: boundsOf,
     resizeRect: resizeRect,
+    alignRects: alignRects,
+    distributeRects: distributeRects,
+    spacing: spacing,
   };
 })(typeof window !== "undefined" ? window : global);

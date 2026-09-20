@@ -54,4 +54,20 @@ var marquee = G.rect(0, 0, 50, 50);
 var hits = widgets.filter(function (n) { return G.intersects(marquee, n._layout); }).map(function (n) { return n.id; });
 assert(hits.indexOf("a") >= 0 && hits.indexOf("b") < 0, "marquee selects overlapping widgets only");
 
+var aligned = G.alignRects(
+  [{ x: 10, y: 10, w: 20, h: 10 }, { x: 40, y: 30, w: 20, h: 10 }],
+  "left"
+);
+almost(aligned[0].x, 10, "align left 0");
+almost(aligned[1].x, 10, "align left 1");
+
+var dist = G.distributeRects(
+  [{ x: 0, y: 0, w: 10, h: 10 }, { x: 20, y: 0, w: 10, h: 10 }, { x: 90, y: 0, w: 10, h: 10 }],
+  "x"
+);
+almost(dist[1].x, 45, "distribute middle x");
+
+var sp = G.spacing({ x: 0, y: 0, w: 10, h: 10 }, { x: 40, y: 0, w: 10, h: 10 });
+almost(sp.dx, 30, "gap dx");
+
 console.log("p0.test.js passed");

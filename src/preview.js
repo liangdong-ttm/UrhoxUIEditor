@@ -27,6 +27,7 @@
   var selectedNodes = [];
   var hoverNode = null;
   var marquee = null;
+  var spacingTarget = null;
   var collapsed = {};
   var nodeSeq = 0;
   var pendingImages = 0;
@@ -396,6 +397,7 @@
       if (drag && drag.mode !== "marquee") drawSizeBadge(selectedNode);
     }
     drawMarquee();
+    drawSpacing();
     drawGuides();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
@@ -406,6 +408,32 @@
     var text = (label.typeName + (label.name ? " " + label.name : "")).trim();
     if (label.extra) text += "  " + label.extra;
     drawLabel(text, node._layout.x + node._layout.w / 2, node._layout.y - 12);
+  }
+
+  function drawSpacing() {
+    if (!spacingTarget || !selectedNode || !selectedNode._layout || !spacingTarget._layout) return;
+    var a = selectedNode._layout;
+    var b = spacingTarget._layout;
+    var sp = window.UrhoxGeom.spacing(a, b);
+    ctx.save();
+    ctx.strokeStyle = FIGMA_PINK;
+    ctx.fillStyle = FIGMA_PINK;
+    ctx.lineWidth = screenLine(1);
+    if (sp.dx) {
+      var y = Math.min(a.y + a.h / 2, b.y + b.h / 2);
+      var x1 = a.x + a.w < b.x ? a.x + a.w : b.x + b.w;
+      var x2 = a.x + a.w < b.x ? b.x : a.x;
+      ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+      drawLabel(String(Math.round(sp.dx)), (x1 + x2) / 2, y - 10);
+    }
+    if (sp.dy) {
+      var x = Math.min(a.x + a.w / 2, b.x + b.w / 2);
+      var y1 = a.y + a.h < b.y ? a.y + a.h : b.y + b.h;
+      var y2 = a.y + a.h < b.y ? b.y : a.y;
+      ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x, y2); ctx.stroke();
+      drawLabel(String(Math.round(sp.dy)), x + 14, (y1 + y2) / 2);
+    }
+    ctx.restore();
   }
 
   function drawMarquee() {
@@ -484,6 +512,25 @@
         return;
       }
       selectNode(node, true, event.shiftKey);
+    });
+    row.draggable = true;
+    row.addEventListener("dragstart", function (event) {
+      event.dataTransfer.setData("text/plain", nodeKey(node));
+      event.dataTransfer.effectAllowed = "move";
+    });
+    row.addEventListener("dragover", function (event) {
+      event.preventDefault();
+      row.classList.add("drop-target");
+    });
+    row.addEventListener("dragleave", function () {
+      row.classList.remove("drop-target");
+    });
+    row.addEventListener("drop", function (event) {
+      event.preventDefault();
+      row.classList.remove("drop-target");
+      var key = event.dataTransfer.getData("text/plain");
+      var dragged = findById(currentTree, key);
+      if (dragged && dragged !== node) reparent(dragged, node);
     });
 
     treeEl.appendChild(row);
@@ -727,8 +774,10 @@
       return;
     }
     var hit = pickNodeAt(p.x, p.y);
-    setPreviewCursor(hit && hit === selectedNode ? "moving" : "");
-    if (hit !== hoverNode) {
+    if (event.altKey && selectedNode && hit && hit !== selectedNode) spacingTarget = hit;
+    else spacingTarget = null;
+    setPreviewCursor(hit && isSelected(hit) ? "moving" : "");
+    if (hit !== hoverNode || spacingTarget) {
       hoverNode = hit;
       drawTree(currentTree);
     }
@@ -992,6 +1041,106 @@
     renderInspector();
   }
 
+  function applyRectsToNodes(nodes, rects) {
+    pushHistory();
+    nodes.forEach(function (node, i) {
+      var r = rects[i];
+      if (node && r) applyRect(node, r.x, r.y, r.w, r.h);
+    });
+    layoutNow();
+    drawTree(currentTree);
+    renderInspector();
+  }
+
+  function alignSelection(mode) {
+    if (selectedNodes.length < 2) return;
+    var rects = selectedNodes.map(function (n) { return n._layout; });
+    applyRectsToNodes(selectedNodes, window.UrhoxGeom.alignRects(rects, mode));
+  }
+
+  function distributeSelection(axis) {
+    if (selectedNodes.length < 3) return;
+    var rects = selectedNodes.map(function (n) { return n._layout; });
+    applyRectsToNodes(selectedNodes, window.UrhoxGeom.distributeRects(rects, axis));
+  }
+
+  function reparent(node, newParent) {
+    if (!node || !newParent || node === newParent) return;
+    var cur = newParent;
+    while (cur) {
+      if (cur === node) return;
+      cur = parentOf(currentTree, cur);
+    }
+    var oldParent = parentOf(currentTree, node);
+    if (!oldParent || oldParent === newParent) return;
+    pushHistory();
+    oldParent.children = (oldParent.children || []).filter(function (c) { return c !== node; });
+    newParent.children = newParent.children || [];
+    newParent.children.push(node);
+    layoutNow();
+    ensureNodeKeys(currentTree);
+    selectNode(node, true);
+  }
+
+  function moveLayer(delta, extreme) {
+    if (!selectedNode) return;
+    var parent = parentOf(currentTree, selectedNode);
+    if (!parent || !parent.children) return;
+    var list = parent.children.slice();
+    var i = list.indexOf(selectedNode);
+    if (i < 0) return;
+    list.splice(i, 1);
+    var next = extreme ? (delta > 0 ? list.length : 0) : Math.max(0, Math.min(list.length, i + delta));
+    list.splice(next, 0, selectedNode);
+    pushHistory();
+    parent.children = list;
+    layoutNow();
+    renderTreePanel();
+    drawTree(currentTree);
+  }
+
+  function groupSelection() {
+    if (selectedNodes.length < 1) return;
+    var first = selectedNodes[0];
+    var parent = parentOf(currentTree, first) || currentTree;
+    var same = selectedNodes.every(function (n) { return parentOf(currentTree, n) === parent; });
+    if (!same) return;
+    var b = window.UrhoxGeom.boundsOf(selectedNodes.map(function (n) { return n._layout; }));
+    if (!b) return;
+    pushHistory();
+    var group = { type: "Panel", id: "group", position: "absolute", left: b.x, top: b.y, width: b.w, height: b.h, backgroundColor: false, children: [] };
+    selectedNodes.forEach(function (n) {
+      parent.children = (parent.children || []).filter(function (c) { return c !== n; });
+      n.left = (n._layout.x - b.x);
+      n.top = (n._layout.y - b.y);
+      group.children.push(n);
+    });
+    parent.children = parent.children || [];
+    parent.children.push(group);
+    layoutNow();
+    ensureNodeKeys(currentTree);
+    selectNode(group, true);
+  }
+
+  function ungroupSelection() {
+    if (!selectedNode || !selectedNode.children || !selectedNode.children.length) return;
+    var parent = parentOf(currentTree, selectedNode);
+    if (!parent) return;
+    pushHistory();
+    var box = selectedNode._layout || { x: 0, y: 0 };
+    var kids = selectedNode.children.slice();
+    parent.children = (parent.children || []).filter(function (c) { return c !== selectedNode; });
+    kids.forEach(function (kid) {
+      kid.left = (Number(kid.left) || 0) + box.x;
+      kid.top = (Number(kid.top) || 0) + box.y;
+      kid.position = kid.position || "absolute";
+      parent.children.push(kid);
+    });
+    layoutNow();
+    ensureNodeKeys(currentTree);
+    setSelection(kids);
+  }
+
   function renameSelected() {
     if (!selectedNode) return;
     var next = window.prompt("节点名称", selectedNode.id || "");
@@ -1055,7 +1204,23 @@
       return window.UrhoxGeom.boundsOf(selectedNodes.map(function (n) { return n._layout; }).filter(Boolean));
     },
     setDevice: setDevice,
+    align: alignSelection,
+    distribute: distributeSelection,
+    group: groupSelection,
+    ungroup: ungroupSelection,
+    moveLayer: moveLayer,
   };
+
+  document.querySelectorAll("[data-align]").forEach(function (btn) {
+    btn.addEventListener("click", function () { alignSelection(btn.getAttribute("data-align")); });
+  });
+  document.querySelectorAll("[data-dist]").forEach(function (btn) {
+    btn.addEventListener("click", function () { distributeSelection(btn.getAttribute("data-dist")); });
+  });
+  var groupBtn = document.getElementById("groupBtn");
+  var ungroupBtn = document.getElementById("ungroupBtn");
+  if (groupBtn) groupBtn.addEventListener("click", groupSelection);
+  if (ungroupBtn) ungroupBtn.addEventListener("click", ungroupSelection);
 
   var deviceSelect = document.getElementById("deviceSelect");
   if (deviceSelect) {

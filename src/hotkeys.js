@@ -77,6 +77,22 @@
       api.rename();
       return;
     }
+    if (mod(event) && key.toLowerCase() === "g") {
+      event.preventDefault();
+      if (shift) api.ungroup && api.ungroup();
+      else api.group && api.group();
+      return;
+    }
+    if (key === "]") {
+      event.preventDefault();
+      api.moveLayer && api.moveLayer(1, event.altKey);
+      return;
+    }
+    if (key === "[") {
+      event.preventDefault();
+      api.moveLayer && api.moveLayer(-1, event.altKey);
+      return;
+    }
     if (key === "Delete" || key === "Backspace") {
       event.preventDefault();
       api.remove();
