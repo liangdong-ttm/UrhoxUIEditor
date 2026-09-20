@@ -1,14 +1,14 @@
 # Urhox UI Editor
 
-独立静态页，用来预览和检查 UrhoX 的 `.ui.json`。
+独立静态页，用来预览和编辑 UrhoX 的 `.ui.json`。
 
-布局接近 Unity / Godot：
+布局接近 Unity / Godot，中间画布交互参考 Figma。
 
-- 顶栏：打开本地项目
-- 左：Hierarchy（当前界面节点树）
-- 中：UI 预览
-- 右：Inspector（选中节点的属性）
-- 底：项目里的 `.ui.json` 列表（按目录）
+- 顶栏：打开项目、保存、预览屏幕（720p / 1080p / 2K / 4K）
+- 左：Hierarchy
+- 中：UI 预览（点阵画布、选中蓝框、拖移缩放）
+- 右：Inspector
+- 底：目录树 + `.ui.json` 列表 / 图标
 
 ## 本地运行
 
@@ -21,24 +21,22 @@ python3 serve.py
 
 然后打开 http://127.0.0.1:4190/
 
-也可以：
+## 打开项目
 
-```bash
-python3 -m http.server 4190 --bind 127.0.0.1
-```
+点 **打开项目**，选择 UrhoX 游戏目录。浏览器会索引 `.ui.json`。
 
-## 打开自己的项目
+有修改后点 **保存** 或 `⌘S` / `Ctrl+S` 才写回文件。未保存时切换其它 json 会弹窗确认。直接写回需要 Chrome 授权目录读写。
 
-点 **打开项目**，选择 UrhoX 游戏目录。浏览器会索引其中的 `.ui.json`，并按目录显示在底部。
+## 分辨率
 
-静态页不能自己扫磁盘，必须由你授权选择目录。
+json 用设计像素编辑（例如 720×1280）。预览屏幕只改变外框，根节点整体等比铺满，和引擎 `UI.Scale.DESIGN_RESOLUTION` 一类。
 
-## 内置示例
+## 常用快捷键
 
-未打开项目时，会加载 `examples/meowdoku/ui/start.ui.json`（汪汪数独开始页）。
+Mac 用 `⌘`，Windows 用 `Ctrl`。
 
-## 说明
-
-- 布局按 Yoga 默认值计算（`flexDirection=column`，`flexShrink=0`）
-- Inspector 字段对齐 UrhoX Widget / Label / Button props
-- 当前还不能把修改写回文件
+- 撤销 / 重做：`⌘Z` / `⇧⌘Z`
+- 复制 / 剪切 / 粘贴 / 再制：`⌘C` `⌘X` `⌘V` `⌘D`
+- 删除：`Delete`
+- 微移：方向键，`Shift` 为大步
+- 保存：`⌘S`

@@ -1,0 +1,189 @@
+// layout.js
+// 用途：分栏拖动；中间画布 Figma 式平移 / 滚轮缩放 / 点阵背景。
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+  var preview = document.getElementById("preview");
+  var stageWrap = document.getElementById("previewStage");
+  var canvas = document.getElementById("stage");
+  var zoomLabel = document.getElementById("zoomLabel");
+  var fitBtn = document.getElementById("fitBtn");
+
+  var leftW = 280;
+  var rightW = 320;
+  var bottomH = 200;
+  var projLeftW = 240;
+  var zoom = 0.5;
+  var panX = 24;
+  var panY = 24;
+  var spaceDown = false;
+  var MIN_SIDE = 180;
+  var MIN_BOTTOM = 120;
+  var MIN_PREVIEW = 220;
+  var GRID = 18;
+
+  function applySizes() {
+    root.style.setProperty("--left-w", leftW + "px");
+    root.style.setProperty("--right-w", rightW + "px");
+    root.style.setProperty("--bottom-h", bottomH + "px");
+    root.style.setProperty("--proj-left-w", projLeftW + "px");
+  }
+
+  function applyView() {
+    if (!stageWrap) return;
+    stageWrap.style.transform = "translate(" + panX + "px," + panY + "px) scale(" + zoom + ")";
+    if (preview) {
+      preview.style.setProperty("--grid-x", (panX % GRID) + "px");
+      preview.style.setProperty("--grid-y", (panY % GRID) + "px");
+    }
+    if (zoomLabel) zoomLabel.textContent = Math.round(zoom * 100) + "%";
+  }
+
+  function fitPreview() {
+    if (!preview || !canvas) return;
+    var originX = Number(canvas.dataset.originX || 0);
+    var originY = Number(canvas.dataset.originY || 0);
+    var designW = canvas.width - originX * 2;
+    var designH = canvas.height - originY * 2;
+    var margin = 72;
+    var sx = (preview.clientWidth - margin) / designW;
+    var sy = (preview.clientHeight - margin) / designH;
+    zoom = Math.max(0.08, Math.min(sx, sy, 1.5));
+    panX = (preview.clientWidth - designW * zoom) / 2 - originX * zoom;
+    panY = (preview.clientHeight - designH * zoom) / 2 - originY * zoom;
+    applyView();
+  }
+
+  function bindSplit(el, kind) {
+    el.addEventListener("pointerdown", function (event) {
+      event.preventDefault();
+      el.classList.add("dragging");
+      var startX = event.clientX;
+      var startY = event.clientY;
+      var startLeft = leftW;
+      var startRight = rightW;
+      var startBottom = bottomH;
+      var startProj = projLeftW;
+      function move(ev) {
+        if (kind === "left") {
+          leftW = Math.max(MIN_SIDE, Math.min(window.innerWidth - rightW - MIN_PREVIEW, startLeft + (ev.clientX - startX)));
+        } else if (kind === "right") {
+          rightW = Math.max(MIN_SIDE, Math.min(window.innerWidth - leftW - MIN_PREVIEW, startRight - (ev.clientX - startX)));
+        } else if (kind === "bottom") {
+          bottomH = Math.max(MIN_BOTTOM, Math.min(window.innerHeight - 160, startBottom - (ev.clientY - startY)));
+        } else if (kind === "project") {
+          var bar = document.querySelector(".project-bar");
+          var max = (bar ? bar.clientWidth : 400) - 160;
+          projLeftW = Math.max(140, Math.min(max, startProj + (ev.clientX - startX)));
+        }
+        applySizes();
+      }
+      function up() {
+        el.classList.remove("dragging");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+      }
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    });
+  }
+
+  document.querySelectorAll(".split-v, .split-h").forEach(function (el) {
+    bindSplit(el, el.getAttribute("data-split"));
+  });
+
+  window.addEventListener("keydown", function (event) {
+    if (event.code === "Space" && !event.repeat) {
+      spaceDown = true;
+      if (preview) preview.classList.add("space");
+      event.preventDefault();
+    }
+  });
+  window.addEventListener("keyup", function (event) {
+    if (event.code === "Space") {
+      spaceDown = false;
+      if (preview) preview.classList.remove("space");
+    }
+  });
+
+  if (preview) {
+    preview.addEventListener("wheel", function (event) {
+      event.preventDefault();
+      var rect = preview.getBoundingClientRect();
+      var mx = event.clientX - rect.left;
+      var my = event.clientY - rect.top;
+      var before = zoom;
+      var factor = event.deltaY < 0 ? 1.08 : 1 / 1.08;
+      zoom = Math.max(0.08, Math.min(8, zoom * factor));
+      panX = mx - (mx - panX) * (zoom / before);
+      panY = my - (my - panY) * (zoom / before);
+      applyView();
+    }, { passive: false });
+
+    var panning = false;
+    var lastX = 0;
+    var lastY = 0;
+    preview.addEventListener("pointerdown", function (event) {
+      var pan = event.button === 1 || event.button === 2 || spaceDown || event.target === preview;
+      if (!pan) return;
+      event.preventDefault();
+      panning = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      preview.classList.add("panning");
+      preview.setPointerCapture(event.pointerId);
+    });
+    preview.addEventListener("pointermove", function (event) {
+      if (!panning) return;
+      panX += event.clientX - lastX;
+      panY += event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      applyView();
+    });
+    preview.addEventListener("pointerup", function () {
+      panning = false;
+      preview.classList.remove("panning");
+    });
+    preview.addEventListener("contextmenu", function (event) {
+      event.preventDefault();
+    });
+  }
+
+  if (fitBtn) fitBtn.addEventListener("click", fitPreview);
+  window.addEventListener("resize", function () { applySizes(); });
+
+  applySizes();
+  applyView();
+  requestAnimationFrame(fitPreview);
+
+  window.UrhoxView = {
+    fit: fitPreview,
+    getZoom: function () { return zoom; },
+    setZoom: function (value) {
+      if (!preview || !canvas) return;
+      zoom = Math.max(0.08, Math.min(8, value));
+      panX = (preview.clientWidth - canvas.width * zoom) / 2;
+      panY = (preview.clientHeight - canvas.height * zoom) / 2;
+      applyView();
+    },
+    zoomBy: function (factor) {
+      if (!preview) return;
+      var rect = preview.getBoundingClientRect();
+      var mx = rect.width / 2;
+      var my = rect.height / 2;
+      var before = zoom;
+      zoom = Math.max(0.08, Math.min(8, zoom * factor));
+      panX = mx - (mx - panX) * (zoom / before);
+      panY = my - (my - panY) * (zoom / before);
+      applyView();
+    },
+    isSpaceDown: function () { return spaceDown; },
+    panBy: function (dx, dy) {
+      panX += dx;
+      panY += dy;
+      applyView();
+    },
+  };
+})();

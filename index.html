@@ -12,11 +12,25 @@
       <div class="toolbar-left">
         <strong>Urhox UI Editor</strong>
         <button id="openProjectBtn" type="button">打开项目</button>
+        <button id="saveBtn" type="button" class="ghost" disabled>保存</button>
         <input id="folderInput" type="file" webkitdirectory multiple hidden />
         <span id="projectName" class="muted">未打开项目 · 内置示例</span>
+        <span id="dirtyBadge" class="dirty-badge hidden">未保存</span>
       </div>
       <div class="toolbar-right">
-        <label><input id="overlayToggle" type="checkbox" /> 布局框</label>
+        <label class="device-label">预览屏幕
+          <select id="deviceSelect">
+            <option value="720p">720p 720×1280</option>
+            <option value="1080p" selected>1080p 1080×1920</option>
+            <option value="2k">2K 1440×2560</option>
+            <option value="4k">4K 2160×3840</option>
+            <option value="1080p-land">1080p 横屏 1920×1080</option>
+            <option value="2k-land">2K 横屏 2560×1440</option>
+          </select>
+        </label>
+        <span id="scaleBadge" class="muted">缩放 1.00×</span>
+        <span id="zoomLabel" class="muted">100%</span>
+        <button id="fitBtn" type="button" class="ghost">适应窗口</button>
         <span id="meta" class="muted"></span>
       </div>
     </header>
@@ -26,11 +40,16 @@
         <div class="panel-title">Hierarchy</div>
         <div id="tree" class="tree"></div>
       </aside>
+      <div class="split-v" data-split="left" title="拖动调整宽度"></div>
 
-      <main class="preview">
-        <canvas id="stage" width="720" height="1280"></canvas>
+      <main class="preview" id="preview">
+        <div class="preview-stage" id="previewStage">
+          <div class="artboard-label" id="artboardLabel">Frame</div>
+          <canvas id="stage" width="720" height="1280"></canvas>
+        </div>
       </main>
 
+      <div class="split-v" data-split="right" title="拖动调整宽度"></div>
       <aside class="inspector">
         <div class="panel-title">Inspector</div>
         <div id="inspector" class="inspector-body">
@@ -39,17 +58,45 @@
       </aside>
     </div>
 
+    <div class="split-h" data-split="bottom" title="拖动调整高度"></div>
+
     <footer class="project-bar">
-      <div class="panel-title">Project / UI</div>
-      <div id="projectFiles" class="project-files">
-        <p class="muted">打开 UrhoX 项目后，会按目录列出 <code>.ui.json</code></p>
+      <div class="project-dirs">
+        <div class="panel-title">Folders</div>
+        <div id="projectDirs" class="project-dir-tree"></div>
+      </div>
+      <div class="split-v" data-split="project" title="拖动调整宽度"></div>
+      <div class="project-files-pane">
+        <div class="panel-title project-files-title">
+          <span>UI</span>
+          <div class="view-toggle">
+            <button id="viewListBtn" type="button" class="ghost active">列表</button>
+            <button id="viewIconBtn" type="button" class="ghost">图标</button>
+          </div>
+        </div>
+        <div id="projectFiles" class="project-files"></div>
       </div>
     </footer>
   </div>
 
+  <div id="saveDialog" class="dialog-mask hidden">
+    <div class="dialog">
+      <h3>要保存对当前 UI 的修改吗？</h3>
+      <p id="saveDialogPath" class="muted"></p>
+      <div class="dialog-actions">
+        <button id="saveDialogCancel" type="button" class="ghost">取消</button>
+        <button id="saveDialogDiscard" type="button" class="ghost danger">不保存</button>
+        <button id="saveDialogSave" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+
   <script src="src/yoga-lite.js"></script>
+  <script src="src/history.js"></script>
   <script src="src/inspector.js"></script>
+  <script src="src/layout.js"></script>
   <script src="src/preview.js"></script>
+  <script src="src/hotkeys.js"></script>
   <script src="src/editor.js"></script>
 </body>
 </html>
