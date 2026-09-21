@@ -480,6 +480,20 @@
     row.style.paddingLeft = (6 + depth * 14) + "px";
     row.dataset.key = key;
 
+    var vis = document.createElement("input");
+    vis.type = "checkbox";
+    vis.className = "tree-vis";
+    vis.checked = node.visible !== false;
+    vis.title = vis.checked ? "显示节点及子节点" : "隐藏节点及子节点";
+    vis.addEventListener("click", function (event) {
+      event.stopPropagation();
+    });
+    vis.addEventListener("change", function (event) {
+      event.stopPropagation();
+      setNodeVisible(node, vis.checked);
+    });
+    row.appendChild(vis);
+
     var toggle = document.createElement("span");
     toggle.className = "tree-toggle";
     toggle.textContent = children.length ? (isCollapsed ? "▸" : "▾") : "";
@@ -655,6 +669,7 @@
   }
 
   function selectNode(node, fromTree, additive) {
+    if (fromTree) exitPickMode();
     if (!node) {
       setSelection([], false);
       return;
@@ -783,6 +798,16 @@
     }
   });
 
+  var previewEl = document.getElementById("preview");
+  if (previewEl) {
+    previewEl.addEventListener("pointerdown", function (event) {
+      if (event.button !== 0) return;
+      if (window.UrhoxView && window.UrhoxView.isSpaceDown()) return;
+      if (event.target !== previewEl) return;
+      enterPickMode();
+    });
+  }
+
   canvas.addEventListener("pointerleave", function () {
     hoverNode = null;
     setPreviewCursor("");
@@ -810,16 +835,13 @@
       return;
     }
     var hit = pickNodeAt(p.x, p.y);
+    if (!hit) {
+      enterPickMode();
+      return;
+    }
     if (lockedFromTree && selectedNode && !event.shiftKey) {
       beginMoveOrResize(selectedNode, "move", p, event);
       canvas.setPointerCapture(event.pointerId);
-      return;
-    }
-    if (!hit) {
-      drag = { mode: "marquee", startX: p.x, startY: p.y, additive: event.shiftKey, seed: selectedNodes.slice() };
-      marquee = { x: p.x, y: p.y, w: 0, h: 0 };
-      canvas.setPointerCapture(event.pointerId);
-      drawTree(currentTree);
       return;
     }
     if (hit.locked) return;
@@ -1024,14 +1046,31 @@
     selectNode(copy);
   }
 
-  function toggleVisible() {
-    if (!selectedNode) return;
+  function setNodeVisible(node, visible) {
+    if (!node) return;
     pushHistory();
-    selectedNode.visible = selectedNode.visible === false;
+    node.visible = visible !== false;
     layoutNow();
     renderTreePanel();
     renderInspector();
     drawTree(currentTree);
+  }
+
+  function toggleVisible() {
+    if (!selectedNode) return;
+    setNodeVisible(selectedNode, selectedNode.visible === false);
+  }
+
+  function enterPickMode() {
+    lockedFromTree = false;
+    selectNode(null);
+    var btn = document.getElementById("pickToolBtn");
+    if (btn) btn.classList.add("active");
+  }
+
+  function exitPickMode() {
+    var btn = document.getElementById("pickToolBtn");
+    if (btn) btn.classList.remove("active");
   }
 
   function toggleLocked() {
@@ -1170,6 +1209,7 @@
     get selected() { return selectedNode; },
     get tree() { return currentTree; },
     getJSON: function () { return serializableTree(currentTree); },
+    assetUrl: resolveAsset,
     contentTransform: contentTransform,
     markClean: markClean,
     undo: function () {
@@ -1189,7 +1229,8 @@
     toggleVisible: toggleVisible,
     toggleLocked: toggleLocked,
     rename: renameSelected,
-    deselect: function () { lockedFromTree = false; selectNode(null); },
+    deselect: function () { enterPickMode(); },
+    enterPickMode: enterPickMode,
     selectParent: function () {
       if (!selectedNode) return;
       var parent = parentOf(currentTree, selectedNode);
@@ -1221,6 +1262,12 @@
   var ungroupBtn = document.getElementById("ungroupBtn");
   if (groupBtn) groupBtn.addEventListener("click", groupSelection);
   if (ungroupBtn) ungroupBtn.addEventListener("click", ungroupSelection);
+  var pickToolBtn = document.getElementById("pickToolBtn");
+  if (pickToolBtn) {
+    pickToolBtn.addEventListener("click", function () {
+      enterPickMode();
+    });
+  }
 
   var deviceSelect = document.getElementById("deviceSelect");
   if (deviceSelect) {

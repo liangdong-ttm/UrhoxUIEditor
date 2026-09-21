@@ -125,7 +125,7 @@
     var lastX = 0;
     var lastY = 0;
     preview.addEventListener("pointerdown", function (event) {
-      var pan = event.button === 1 || event.button === 2 || spaceDown || event.target === preview;
+      var pan = event.button === 1 || event.button === 2 || spaceDown;
       if (!pan) return;
       event.preventDefault();
       panning = true;

@@ -23,6 +23,10 @@
   var selectedDir = "";
   var viewMode = "list";
   var collapsedDirs = {};
+  var bottomTab = "ui";
+  var assets = [];
+  var selectedAsset = "";
+  var replaceTarget = null;
   var dirtyPaths = {};
   var pendingFile = null;
   var saveBtn = document.getElementById("saveBtn");
@@ -120,23 +124,37 @@
     return window.UrhoxPreview ? window.UrhoxPreview.currentPath : "";
   }
 
+  function currentEntries() {
+    if (bottomTab === "project") return assets;
+    return project.files;
+  }
+
   function renderFileList(files) {
     projectFilesEl.innerHTML = "";
     if (!files.length) {
-      projectFilesEl.innerHTML = "<p class=\"muted\">这个目录下没有 .ui.json</p>";
+      projectFilesEl.innerHTML = bottomTab === "project"
+        ? "<p class=\"muted\">这个目录下没有图片 / 字体</p>"
+        : "<p class=\"muted\">这个目录下没有 .ui.json</p>";
       return;
     }
     files = files.slice().sort(function (a, b) { return a.path.localeCompare(b.path); });
+    var activePath = bottomTab === "project" ? selectedAsset : currentFilePath();
     if (viewMode === "icon") {
       var grid = document.createElement("div");
       grid.className = "file-grid";
       files.forEach(function (file) {
         var card = document.createElement("div");
-        card.className = "file-card" + (currentFilePath() === file.path ? " active" : "") + (dirtyPaths[file.path] ? " dirty" : "");
+        card.className = "file-card" + (activePath === file.path ? " active" : "") + (dirtyPaths[file.path] ? " dirty" : "") + (selectedAsset === file.path ? " reveal" : "");
         card.title = file.path;
-        card.innerHTML = "<div class=\"icon\">JSON</div><div class=\"name\"></div>";
+        card.dataset.path = file.path;
+        if (file.kind === "image" && window.UrhoxPreview && window.UrhoxPreview.assetUrl) {
+          card.innerHTML = "<img class=\"icon\" alt=\"\" /><div class=\"name\"></div>";
+          card.querySelector("img").src = window.UrhoxPreview.assetUrl(file.ref || file.path);
+        } else {
+          card.innerHTML = "<div class=\"icon\">" + (file.kind === "font" ? "TTF" : "JSON") + "</div><div class=\"name\"></div>";
+        }
         card.querySelector(".name").textContent = file.name;
-        card.addEventListener("click", function () { openUiFile(file); });
+        card.addEventListener("click", function () { onEntryClick(file); });
         grid.appendChild(card);
       });
       projectFilesEl.appendChild(grid);
@@ -146,21 +164,60 @@
     list.className = "file-list";
     files.forEach(function (file) {
       var item = document.createElement("div");
-      item.className = "file-item" + (currentFilePath() === file.path ? " active" : "") + (dirtyPaths[file.path] ? " dirty" : "");
+      item.className = "file-item" + (activePath === file.path ? " active" : "") + (dirtyPaths[file.path] ? " dirty" : "") + (selectedAsset === file.path ? " reveal" : "");
       item.title = file.path;
+      item.dataset.path = file.path;
       item.innerHTML = "<span></span><span class=\"file-path\"></span>";
       item.querySelector("span").textContent = file.name;
       item.querySelector(".file-path").textContent = file.dir || "";
-      item.addEventListener("click", function () { openUiFile(file); });
+      item.addEventListener("click", function () { onEntryClick(file); });
       list.appendChild(item);
     });
     projectFilesEl.appendChild(list);
   }
 
+  function onEntryClick(file) {
+    if (replaceTarget && file.kind === "image") {
+      applyReplace(file);
+      return;
+    }
+    if (bottomTab === "project") {
+      selectedAsset = file.path;
+      renderAll();
+      return;
+    }
+    openUiFile(file);
+  }
+
+  function applyReplace(file) {
+    if (!replaceTarget) return;
+    replaceTarget.node[replaceTarget.key] = file.ref || file.path;
+    var cb = replaceTarget.onChange;
+    replaceTarget = null;
+    if (cb) cb();
+    selectedAsset = file.path;
+    renderAll();
+  }
+
+  function setBottomTab(tab) {
+    bottomTab = tab;
+    document.querySelectorAll(".tab-btn").forEach(function (btn) {
+      btn.classList.toggle("active", btn.getAttribute("data-tab") === tab);
+    });
+    var dirTitle = document.getElementById("bottomDirTitle");
+    var listTitle = document.getElementById("bottomListTitle");
+    if (dirTitle) dirTitle.textContent = tab === "project" ? "项目目录" : "UI目录";
+    if (listTitle) listTitle.textContent = tab === "project" ? (replaceTarget ? "选择一张图片替换" : "文件") : "UI配置";
+    selectedDir = "";
+    renderAll();
+  }
+
   function renderAll() {
-    var tree = buildDirTree(project.files);
-    projectDirsEl.innerHTML = "";
-    renderDirNode(tree, projectDirsEl, 0);
+    var tree = buildDirTree(currentEntries());
+    if (projectDirsEl) {
+      projectDirsEl.innerHTML = "";
+      renderDirNode(tree, projectDirsEl, 0);
+    }
     renderFileList(filesForDir(tree, selectedDir));
   }
 
@@ -196,27 +253,44 @@
     return JSON.stringify(tree, null, 2) + "\n";
   }
 
-  async function writeFile(file, text) {
-    if (file && file.handle && file.handle.createWritable) {
-      if (file.handle.requestPermission) {
-        var perm = await file.handle.requestPermission({ mode: "readwrite" });
-        if (perm !== "granted") return { ok: false, mode: "denied" };
-      }
-      var writable = await file.handle.createWritable();
-      await writable.write(text);
-      await writable.close();
-      return { ok: true, mode: "disk" };
+  async function writeViaHandle(file, text) {
+    if (!file || !file.handle || !file.handle.createWritable) return null;
+    if (file.handle.requestPermission) {
+      var perm = await file.handle.requestPermission({ mode: "readwrite" });
+      if (perm !== "granted") return { ok: false, mode: "denied", error: "没有文件写入权限" };
     }
-    var blob = new Blob([text], { type: "application/json" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = file && file.name ? file.name : "ui.json";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    return { ok: true, mode: "download" };
+    var writable = await file.handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+    return { ok: true, mode: "handle" };
+  }
+
+  async function writeViaServer(path, text) {
+    if (!path) return null;
+    try {
+      var res = await fetch("/api/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: path, content: text }),
+      });
+      var data = {};
+      try { data = await res.json(); } catch (err) { data = {}; }
+      if (!res.ok || !data.ok) {
+        return { ok: false, mode: "server", error: data.error || ("保存失败 " + res.status) };
+      }
+      return { ok: true, mode: "server" };
+    } catch (err) {
+      return { ok: false, mode: "server", error: String(err) };
+    }
+  }
+
+  async function writeFile(file, text, fallbackPath) {
+    var handleResult = await writeViaHandle(file, text);
+    if (handleResult && handleResult.ok) return handleResult;
+    var serverResult = await writeViaServer((file && file.path) || fallbackPath, text);
+    if (serverResult && serverResult.ok) return serverResult;
+    var error = (handleResult && handleResult.error) || (serverResult && serverResult.error) || "无法写回本地 json";
+    return { ok: false, error: error };
   }
 
   async function saveCurrent() {
@@ -225,15 +299,13 @@
     if (!preview || !preview.tree) return false;
     var json = preview.getJSON();
     var text = exportJSON(json);
-    var result = await writeFile(file || { name: basename(preview.currentPath || "ui.json") }, text);
+    var result = await writeFile(file, text, preview.currentPath);
     if (result.ok) {
       setDirty(preview.currentPath, false);
       if (preview.markClean) preview.markClean();
-      if (result.mode === "download") {
-        alert("当前没有目录写入权限，已下载修改后的 json。请用「打开项目」授权目录后即可直接写回文件。");
-      }
       return true;
     }
+    alert("保存失败：" + (result.error || "无法写回本地 json 文件"));
     return false;
   }
 
@@ -306,10 +378,14 @@
         if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "urhox-libs") continue;
         await walkDirectory(entry, path, out);
       } else if (entry.name.indexOf(".ui.json") !== -1) {
-        out.push({ path: path, name: entry.name, handle: entry, dir: dirname(path) });
-      } else if (/\.(png|jpg|jpeg|webp|gif)$/i.test(entry.name)) {
+        out.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "ui" });
+      } else if (/\.(png|jpg|jpeg|webp|gif|tga)$/i.test(entry.name)) {
         project.handleMap[path] = entry;
-        if (path.indexOf("assets/") === 0) project.handleMap[path.slice("assets/".length)] = entry;
+        var ref = path.indexOf("assets/") === 0 ? path.slice("assets/".length) : path;
+        project.handleMap[ref] = entry;
+        assets.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "image", ref: ref });
+      } else if (/\.(ttf|otf|woff2?)$/i.test(entry.name)) {
+        assets.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "font" });
       }
     }
   }
@@ -320,7 +396,9 @@
     project.files = [];
     project.handleMap = {};
     project.fileBlobs = {};
+    assets = [];
     selectedDir = "";
+    selectedAsset = "";
     await walkDirectory(handle, "", project.files);
     projectNameEl.textContent = project.name + " · " + project.files.length + " 个 UI";
     renderAll();
@@ -333,14 +411,20 @@
     project.fileBlobs = {};
     selectedDir = "";
     var uiFiles = [];
+    assets = [];
+    selectedAsset = "";
     Array.from(fileList).forEach(function (file) {
       var path = file.webkitRelativePath || file.name;
       if (path.indexOf(".ui.json") !== -1) {
-        uiFiles.push({ path: path, name: basename(path), file: file, dir: dirname(path) });
+        uiFiles.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "ui" });
       }
       project.fileBlobs[path] = file;
-      if (path.indexOf("assets/") >= 0) {
-        project.fileBlobs[path.replace(/^.*?assets\//, "")] = file;
+      var ref = path.indexOf("assets/") >= 0 ? path.replace(/^.*?assets\//, "") : path;
+      project.fileBlobs[ref] = file;
+      if (/\.(png|jpg|jpeg|webp|gif|tga)$/i.test(path)) {
+        assets.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "image", ref: ref });
+      } else if (/\.(ttf|otf|woff2?)$/i.test(path)) {
+        assets.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "font" });
       }
     });
     project.files = uiFiles;
@@ -400,12 +484,68 @@
     event.returnValue = "";
   });
 
+  function seedBuiltinAssets() {
+    assets = [
+      { path: "examples/meowdoku/image/start_ui_buttons_split/5_background_vertical_clean.png", name: "5_background_vertical_clean.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/5_background_vertical_clean.png" },
+      { path: "examples/meowdoku/image/start_ui_buttons_split/1_title_text.png", name: "1_title_text.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/1_title_text.png" },
+      { path: "examples/meowdoku/image/start_ui_buttons_split/2_dog_board.png", name: "2_dog_board.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/2_dog_board.png" },
+      { path: "examples/meowdoku/image/start_ui_buttons_split/3_1_start_button.png", name: "3_1_start_button.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/3_1_start_button.png" },
+      { path: "examples/meowdoku/image/start_ui_buttons_split/3_2_level_button.png", name: "3_2_level_button.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/3_2_level_button.png" },
+      { path: "examples/meowdoku/image/start_ui_buttons_split/3_3_rules_button.png", name: "3_3_rules_button.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/3_3_rules_button.png" },
+      { path: "examples/meowdoku/image/start_ui_buttons_split/3_4_dog_park_button.png", name: "3_4_dog_park_button.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/3_4_dog_park_button.png" },
+      { path: "examples/meowdoku/image/ui_common/ui_lollipop_20260629070007.png", name: "ui_lollipop_20260629070007.png", dir: "examples/meowdoku/image/ui_common", kind: "image", ref: "image/ui_common/ui_lollipop_20260629070007.png" },
+      { path: "examples/meowdoku/image/ui_common/ui_paw_print_20260629070007.png", name: "ui_paw_print_20260629070007.png", dir: "examples/meowdoku/image/ui_common", kind: "image", ref: "image/ui_common/ui_paw_print_20260629070007.png" },
+      { path: "examples/meowdoku/image/ui_common/ui_heart_full_20260629070007.png", name: "ui_heart_full_20260629070007.png", dir: "examples/meowdoku/image/ui_common", kind: "image", ref: "image/ui_common/ui_heart_full_20260629070007.png" },
+      { path: "examples/meowdoku/image/ui_common/ui_star_reward_20260629070007.png", name: "ui_star_reward_20260629070007.png", dir: "examples/meowdoku/image/ui_common", kind: "image", ref: "image/ui_common/ui_star_reward_20260629070007.png" },
+      { path: "examples/meowdoku/image/victory_popup_slices/6_1_next_button_no_text.png", name: "6_1_next_button_no_text.png", dir: "examples/meowdoku/image/victory_popup_slices", kind: "image", ref: "image/victory_popup_slices/6_1_next_button_no_text.png" },
+    ];
+  }
+
+  function revealAsset(ref) {
+    var found = assets.find(function (a) {
+      return a.ref === ref || a.path === ref || a.path.endsWith("/" + ref) || ("assets/" + ref) === a.path;
+    });
+    setBottomTab("project");
+    if (!found) return;
+    selectedAsset = found.path;
+    selectedDir = found.dir;
+    viewMode = "icon";
+    if (viewIconBtn) viewIconBtn.classList.add("active");
+    if (viewListBtn) viewListBtn.classList.remove("active");
+    renderAll();
+    requestAnimationFrame(function () {
+      var el = projectFilesEl.querySelector("[data-path=\"" + CSS.escape(found.path) + "\"]");
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  function beginReplaceImage(node, key, onChange) {
+    replaceTarget = { node: node, key: key, onChange: onChange };
+    setBottomTab("project");
+    viewMode = "icon";
+    if (viewIconBtn) viewIconBtn.classList.add("active");
+    if (viewListBtn) viewListBtn.classList.remove("active");
+    renderAll();
+  }
+
+  document.querySelectorAll(".tab-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      replaceTarget = null;
+      setBottomTab(btn.getAttribute("data-tab"));
+    });
+  });
+
+  seedBuiltinAssets();
+  setBottomTab("ui");
+
   window.UrhoxProject = {
     render: renderAll,
     get: function () { return project; },
     setDirty: setDirty,
     isDirty: isDirty,
     saveCurrent: saveCurrent,
+    revealAsset: revealAsset,
+    beginReplaceImage: beginReplaceImage,
   };
 
   renderAll();
