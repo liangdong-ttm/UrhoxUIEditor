@@ -31,6 +31,8 @@
   var pendingFile = null;
   var saveBtn = document.getElementById("saveBtn");
   var dirtyBadge = document.getElementById("dirtyBadge");
+  var permBadge = document.getElementById("permBadge");
+  var writeReady = false;
   var saveDialog = document.getElementById("saveDialog");
   var saveDialogPath = document.getElementById("saveDialogPath");
 
@@ -253,47 +255,25 @@
     return JSON.stringify(tree, null, 2) + "\n";
   }
 
-  async function writeViaHandle(file, text) {
-    if (!file || !file.handle || !file.handle.createWritable) return null;
-    if (file.handle.requestPermission) {
-      var perm = await file.handle.requestPermission({ mode: "readwrite" });
-      if (perm !== "granted") return { ok: false, mode: "denied", error: "没有文件写入权限" };
-    }
-    var writable = await file.handle.createWritable();
-    await writable.write(text);
-    await writable.close();
-    return { ok: true, mode: "handle" };
-  }
-
-  async function writeViaServer(path, text) {
-    if (!path) return null;
-    try {
-      var res = await fetch("/api/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: path, content: text }),
-      });
-      var data = {};
-      try { data = await res.json(); } catch (err) { data = {}; }
-      if (!res.ok || !data.ok) {
-        return { ok: false, mode: "server", error: data.error || ("保存失败 " + res.status) };
-      }
-      return { ok: true, mode: "server" };
-    } catch (err) {
-      return { ok: false, mode: "server", error: String(err) };
-    }
-  }
-
   async function writeFile(file, text, fallbackPath) {
-    var handleResult = await writeViaHandle(file, text);
-    if (handleResult && handleResult.ok) return handleResult;
-    var serverResult = await writeViaServer((file && file.path) || fallbackPath, text);
-    if (serverResult && serverResult.ok) return serverResult;
-    var error = (handleResult && handleResult.error) || (serverResult && serverResult.error) || "无法写回本地 json";
-    return { ok: false, error: error };
+    if (window.UrhoxSave) return window.UrhoxSave.write(file, text, fallbackPath);
+    return { ok: false, error: "保存模块未加载" };
   }
 
   async function saveCurrent() {
+    if (!writeReady) {
+      alert("还没有本机写盘权限。请用 Chrome / Edge 点「打开项目」，并允许读写该文件夹。");
+      return false;
+    }
+    if (project.rootHandle && window.UrhoxSave && window.UrhoxSave.ensureWritable) {
+      var access = await window.UrhoxSave.ensureWritable(project.rootHandle);
+      if (!access.ok) {
+        writeReady = false;
+        refreshPermissionUi();
+        alert("写盘权限已失效，请重新打开项目并允许读写。");
+        return false;
+      }
+    }
     var file = currentFile();
     var preview = window.UrhoxPreview;
     if (!preview || !preview.tree) return false;
@@ -307,6 +287,11 @@
     }
     alert("保存失败：" + (result.error || "无法写回本地 json 文件"));
     return false;
+  }
+
+  function showMissingUiGuide() {
+    var dialog = document.getElementById("missingUiDialog");
+    if (dialog) dialog.classList.remove("hidden");
   }
 
   function hideSaveDialog() {
@@ -353,15 +338,24 @@
       text = await res.text();
     }
     var json = JSON.parse(text);
-    var assetRoot = "examples/meowdoku/";
-    if (file.path.indexOf("/ui/") >= 0) assetRoot = file.path.replace(/\/ui\/[^/]+$/, "/");
+    var assetRoot = "";
+    if (file.path.indexOf("/ui/") >= 0) {
+      assetRoot = file.path.replace(/\/ui\/[^/]+$/, "/");
+    } else if (file.path.indexOf("assets/") >= 0) {
+      assetRoot = file.path.replace(/assets\/.*$/, "assets/");
+    }
     if (window.UrhoxPreview) {
-      window.UrhoxPreview.loadTree(json, {
+      var opts = {
         path: file.path,
         assetRoot: file.assetRoot || assetRoot,
         handleMap: project.handleMap,
         blobMap: project.fileBlobs,
-      });
+      };
+      if (window.UrhoxPreview.loadTreeAsync) {
+        await window.UrhoxPreview.loadTreeAsync(json, opts);
+      } else {
+        window.UrhoxPreview.loadTree(json, opts);
+      }
     }
     setDirty(file.path, false);
     renderAll();
@@ -390,7 +384,36 @@
     }
   }
 
+  function setPermBadge(kind, text) {
+    if (!permBadge) return;
+    permBadge.className = "perm-badge " + (kind || "");
+    permBadge.textContent = text;
+    permBadge.title = text;
+  }
+
+  function refreshPermissionUi() {
+    var caps = window.UrhoxSave && window.UrhoxSave.capabilities ? window.UrhoxSave.capabilities() : { directoryPicker: false, hint: "" };
+    if (writeReady) {
+      setPermBadge("ok", "可写回本机");
+      return;
+    }
+    if (!caps.directoryPicker) {
+      setPermBadge("bad", "当前浏览器不能写本机文件");
+      return;
+    }
+    setPermBadge("warn", "未授权本地项目");
+  }
+
   async function openDirectoryHandle(handle) {
+    var access = window.UrhoxSave && window.UrhoxSave.ensureWritable
+      ? await window.UrhoxSave.ensureWritable(handle)
+      : { ok: false, error: "保存模块未加载" };
+    if (!access.ok) {
+      writeReady = false;
+      refreshPermissionUi();
+      alert("打不开可写项目：" + (access.error || "未授予文件夹读写权限") + "\n\n请在弹窗中选择「允许」读写。没有写权限就不能保存回本机 json。");
+      return false;
+    }
     project.rootHandle = handle;
     project.name = handle.name;
     project.files = [];
@@ -399,10 +422,17 @@
     assets = [];
     selectedDir = "";
     selectedAsset = "";
+    writeReady = true;
     await walkDirectory(handle, "", project.files);
     projectNameEl.textContent = project.name + " · " + project.files.length + " 个 UI";
+    refreshPermissionUi();
     renderAll();
-    if (project.files.length) openUiFile(project.files[0]);
+    if (project.files.length) {
+      openUiFile(project.files[0]);
+    } else {
+      showMissingUiGuide();
+    }
+    return true;
   }
 
   function filesFromInput(fileList) {
@@ -427,24 +457,34 @@
         assets.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "font" });
       }
     });
+    writeReady = false;
     project.files = uiFiles;
     project.name = (fileList[0] && fileList[0].webkitRelativePath.split("/")[0]) || "本地项目";
-    projectNameEl.textContent = project.name + " · " + project.files.length + " 个 UI";
+    projectNameEl.textContent = project.name + " · " + project.files.length + " 个 UI（只读）";
+    refreshPermissionUi();
+    setPermBadge("bad", "只读：无法写回本机");
+    alert("当前方式只能读取文件，不能写回本机 json。\n请用 Chrome 或 Edge，点「打开项目」并在系统弹窗中允许读写。");
     renderAll();
     if (uiFiles[0]) openUiFile(uiFiles[0]);
+    else showMissingUiGuide();
   }
 
   openProjectBtn.addEventListener("click", async function () {
-    if (window.showDirectoryPicker) {
-      try {
-        var handle = await window.showDirectoryPicker({ mode: "readwrite" });
-        await openDirectoryHandle(handle);
-        return;
-      } catch (err) {
-        if (err && err.name === "AbortError") return;
-      }
+    var caps = window.UrhoxSave && window.UrhoxSave.capabilities ? window.UrhoxSave.capabilities() : { directoryPicker: !!window.showDirectoryPicker };
+    if (!caps.directoryPicker) {
+      refreshPermissionUi();
+      alert("当前浏览器不能把修改写回本机项目。\n请使用 Chrome 或 Edge 打开本编辑器，再点「打开项目」。");
+      return;
     }
-    folderInput.click();
+    try {
+      var handle = await window.showDirectoryPicker({ mode: "readwrite" });
+      await openDirectoryHandle(handle);
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
+      writeReady = false;
+      refreshPermissionUi();
+      alert("打开项目失败：" + (err && err.message ? err.message : String(err)));
+    }
   });
 
   folderInput.addEventListener("change", function () {
@@ -464,6 +504,13 @@
     renderAll();
   });
 
+  var missingUiOk = document.getElementById("missingUiOk");
+  if (missingUiOk) {
+    missingUiOk.addEventListener("click", function () {
+      var dialog = document.getElementById("missingUiDialog");
+      if (dialog) dialog.classList.add("hidden");
+    });
+  }
   if (saveBtn) saveBtn.addEventListener("click", function () { saveCurrent(); });
   document.getElementById("saveDialogCancel").addEventListener("click", function () {
     if (pendingFile) pendingFile.resolve("cancel");
@@ -484,21 +531,18 @@
     event.returnValue = "";
   });
 
-  function seedBuiltinAssets() {
-    assets = [
-      { path: "examples/meowdoku/image/start_ui_buttons_split/5_background_vertical_clean.png", name: "5_background_vertical_clean.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/5_background_vertical_clean.png" },
-      { path: "examples/meowdoku/image/start_ui_buttons_split/1_title_text.png", name: "1_title_text.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/1_title_text.png" },
-      { path: "examples/meowdoku/image/start_ui_buttons_split/2_dog_board.png", name: "2_dog_board.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/2_dog_board.png" },
-      { path: "examples/meowdoku/image/start_ui_buttons_split/3_1_start_button.png", name: "3_1_start_button.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/3_1_start_button.png" },
-      { path: "examples/meowdoku/image/start_ui_buttons_split/3_2_level_button.png", name: "3_2_level_button.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/3_2_level_button.png" },
-      { path: "examples/meowdoku/image/start_ui_buttons_split/3_3_rules_button.png", name: "3_3_rules_button.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/3_3_rules_button.png" },
-      { path: "examples/meowdoku/image/start_ui_buttons_split/3_4_dog_park_button.png", name: "3_4_dog_park_button.png", dir: "examples/meowdoku/image/start_ui_buttons_split", kind: "image", ref: "image/start_ui_buttons_split/3_4_dog_park_button.png" },
-      { path: "examples/meowdoku/image/ui_common/ui_lollipop_20260629070007.png", name: "ui_lollipop_20260629070007.png", dir: "examples/meowdoku/image/ui_common", kind: "image", ref: "image/ui_common/ui_lollipop_20260629070007.png" },
-      { path: "examples/meowdoku/image/ui_common/ui_paw_print_20260629070007.png", name: "ui_paw_print_20260629070007.png", dir: "examples/meowdoku/image/ui_common", kind: "image", ref: "image/ui_common/ui_paw_print_20260629070007.png" },
-      { path: "examples/meowdoku/image/ui_common/ui_heart_full_20260629070007.png", name: "ui_heart_full_20260629070007.png", dir: "examples/meowdoku/image/ui_common", kind: "image", ref: "image/ui_common/ui_heart_full_20260629070007.png" },
-      { path: "examples/meowdoku/image/ui_common/ui_star_reward_20260629070007.png", name: "ui_star_reward_20260629070007.png", dir: "examples/meowdoku/image/ui_common", kind: "image", ref: "image/ui_common/ui_star_reward_20260629070007.png" },
-      { path: "examples/meowdoku/image/victory_popup_slices/6_1_next_button_no_text.png", name: "6_1_next_button_no_text.png", dir: "examples/meowdoku/image/victory_popup_slices", kind: "image", ref: "image/victory_popup_slices/6_1_next_button_no_text.png" },
-    ];
+  async function loadBuiltinManifest() {
+    var url = (window.UrhoxConfig && window.UrhoxConfig.MANIFEST) || "examples/manifest.json";
+    try {
+      var res = await fetch(url);
+      if (!res.ok) return;
+      var data = await res.json();
+      if (data.name) project.name = data.name;
+      if (Array.isArray(data.ui)) project.files = data.ui;
+      if (Array.isArray(data.assets)) assets = data.assets;
+      if (projectNameEl) projectNameEl.textContent = project.name + " · 内置示例";
+      renderAll();
+    } catch (err) {}
   }
 
   function revealAsset(ref) {
@@ -535,8 +579,9 @@
     });
   });
 
-  seedBuiltinAssets();
   setBottomTab("ui");
+  loadBuiltinManifest();
+  refreshPermissionUi();
 
   window.UrhoxProject = {
     render: renderAll,

@@ -112,6 +112,17 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   padding: 2px 8px;
   font-size: 11px;
 }
+.perm-badge {
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  background: #3f3f46;
+  color: #e4e4e7;
+}
+.perm-badge.ok { background: #166534; color: #dcfce7; }
+.perm-badge.warn { background: #854d0e; color: #fef9c3; }
+.perm-badge.bad { background: #7f1d1d; color: #fecaca; }
 .hidden { display: none !important; }
 .file-item.dirty::after, .file-card.dirty .name::after { content: " ●"; color: #f59e0b; }
 .dialog-mask {
@@ -124,6 +135,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 }
 .dialog h3 { margin: 0 0 8px; font-size: 16px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.guide-list { color: var(--muted); font-size: 13px; line-height: 1.6; padding-left: 18px; }
 .ghost.danger { color: #fecaca; border-color: #7f1d1d; }
 .device-label {
   display: flex;
@@ -273,6 +285,8 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 }
 .asset-block { display: flex; flex-direction: column; gap: 6px; }
 .asset-actions { display: flex; gap: 6px; }
+.slice-editor { margin-top: 4px; }
+.slice-hint { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 
 .project-bar {
   display: flex;

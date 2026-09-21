@@ -34,6 +34,7 @@
       rows: [
         [{ key: "backgroundImage", label: "Source Image", kind: "asset" }],
         [{ key: "backgroundFit", label: "Image Type", kind: "enum", options: ["fill", "contain", "cover", "sliced"] }, { key: "backgroundColor", label: "Color", kind: "color" }],
+        [{ key: "slice", label: "Border", kind: "slice" }],
       ],
     },
     {
@@ -198,6 +199,13 @@
         control.appendChild(option);
       });
       control.value = value == null ? "" : String(value);
+      if (field.key === "backgroundFit") {
+        control.addEventListener("change", function () {
+          if (control.value === "sliced" && !node.backgroundSlice) {
+            node.backgroundSlice = [40, 40, 40, 40];
+          }
+        });
+      }
     } else {
       control = document.createElement("input");
       control.type = "text";
@@ -209,6 +217,7 @@
   }
 
   function fieldCell(node, field, onChange) {
+    if (field.kind === "slice") return renderSliceField(node, onChange);
     if (field.kind === "asset") return renderAssetField(node, field, onChange);
     var wrap = document.createElement("label");
     wrap.className = "insp-cell";
@@ -227,6 +236,51 @@
       row.appendChild(fieldCell(node, field, onChange));
     });
     return row;
+  }
+
+  function sliceArray(node) {
+    var s = node.backgroundSlice;
+    if (Array.isArray(s) && s.length >= 4) return [s[0] || 0, s[1] || 0, s[2] || 0, s[3] || 0];
+    return [40, 40, 40, 40];
+  }
+
+  function renderSliceField(node, onChange) {
+    var wrap = document.createElement("div");
+    wrap.className = "slice-editor";
+    if (node.backgroundFit !== "sliced") {
+      wrap.hidden = true;
+      return wrap;
+    }
+    if (!node.backgroundSlice) node.backgroundSlice = sliceArray(node);
+    var hint = document.createElement("div");
+    hint.className = "slice-hint";
+    hint.textContent = "四角不拉伸 · 四边单向拉 · 中间双向拉";
+    wrap.appendChild(hint);
+    var row = document.createElement("div");
+    row.className = "insp-line cols-4";
+    [["L", 3], ["T", 0], ["R", 1], ["B", 2]].forEach(function (pair) {
+      var cell = document.createElement("label");
+      cell.className = "insp-cell";
+      var name = document.createElement("span");
+      name.className = "insp-key";
+      name.textContent = pair[0];
+      var input = document.createElement("input");
+      input.type = "number";
+      input.min = "0";
+      input.value = String(node.backgroundSlice[pair[1]] || 0);
+      input.addEventListener("change", function () {
+        var next = sliceArray(node);
+        next[pair[1]] = Math.max(0, Number(input.value) || 0);
+        node.backgroundSlice = next;
+        node.backgroundFit = "sliced";
+        onChange();
+      });
+      cell.appendChild(name);
+      cell.appendChild(input);
+      row.appendChild(cell);
+    });
+    wrap.appendChild(row);
+    return wrap;
   }
 
   function renderAssetField(node, field, onChange) {

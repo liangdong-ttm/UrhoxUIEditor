@@ -16,6 +16,7 @@
           <button id="saveBtn" type="button" class="ghost" disabled>保存</button>
           <input id="folderInput" type="file" webkitdirectory multiple hidden />
           <span id="projectName" class="muted truncate">未打开项目 · 内置示例</span>
+          <span id="permBadge" class="perm-badge">检查权限…</span>
           <span id="dirtyBadge" class="dirty-badge hidden">未保存</span>
         </div>
         <div class="menubar-right">
@@ -111,6 +112,21 @@
     </footer>
   </div>
 
+  <div id="missingUiDialog" class="dialog-mask hidden">
+    <div class="dialog">
+      <h3>这个项目还没有 UI 配置</h3>
+      <p class="muted">编辑器只加载 <code>assets/ui/*.ui.json</code>。界面如果还写在 Lua 里，需要先抽成配置文件。</p>
+      <ol class="guide-list">
+        <li>在项目里让 AI 使用 skill <code>lua-ui-to-json</code></li>
+        <li>对「抽 UI / 转 ui.json / UI 数据化」发出请求</li>
+        <li>抽完后重新打开本项目</li>
+      </ol>
+      <div class="dialog-actions">
+        <button id="missingUiOk" type="button">知道了</button>
+      </div>
+    </div>
+  </div>
+
   <div id="saveDialog" class="dialog-mask hidden">
     <div class="dialog">
       <h3>要保存对当前 UI 的修改吗？</h3>
@@ -123,12 +139,20 @@
     </div>
   </div>
 
+  <script src="src/config.js"></script>
   <script src="src/yoga-lite.js"></script>
   <script src="src/geom.js"></script>
   <script src="src/history.js"></script>
+  <script src="src/doc.js"></script>
+  <script src="src/assets.js"></script>
+  <script src="src/tree.js"></script>
   <script src="src/inspector.js"></script>
+  <script src="src/canvas.js"></script>
+  <script src="src/commands.js"></script>
   <script src="src/layout.js"></script>
+  <script src="src/input.js"></script>
   <script src="src/preview.js"></script>
+  <script src="src/save.js"></script>
   <script src="src/hotkeys.js"></script>
   <script src="src/editor.js"></script>
 </body>

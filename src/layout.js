@@ -47,9 +47,10 @@
     var designW = canvas.width - originX * 2;
     var designH = canvas.height - originY * 2;
     var margin = 72;
-    var sx = (preview.clientWidth - margin) / designW;
-    var sy = (preview.clientHeight - margin) / designH;
-    zoom = Math.max(0.08, Math.min(sx, sy, 1.5));
+    var sx = (preview.clientWidth - margin) / Math.max(1, designW);
+    var sy = (preview.clientHeight - margin) / Math.max(1, designH);
+    var cap = designW < 480 || designH < 480 ? 4 : 1.5;
+    zoom = Math.max(0.08, Math.min(sx, sy, cap));
     panX = (preview.clientWidth - designW * zoom) / 2 - originX * zoom;
     panY = (preview.clientHeight - designH * zoom) / 2 - originY * zoom;
     applyView();

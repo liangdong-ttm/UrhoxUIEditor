@@ -1,0 +1,131 @@
+{
+  "type": "Panel",
+  "id": "level_select_root",
+  "width": 720,
+  "height": 1280,
+  "overflow": "hidden",
+  "pointerEvents": "box-none",
+  "backgroundColor": "#FFE6A3",
+  "children": [
+    {
+      "type": "Panel",
+      "id": "level_background",
+      "position": "absolute",
+      "left": 0,
+      "top": 0,
+      "width": 720,
+      "height": 1280,
+      "backgroundImage": "image/start_ui_buttons_split/5_background_vertical_clean.png",
+      "backgroundFit": "cover",
+      "backgroundColor": "#FFD0AA",
+      "pointerEvents": "none"
+    },
+    {
+      "type": "Panel",
+      "id": "level_content",
+      "position": "absolute",
+      "left": 0,
+      "top": 0,
+      "width": 720,
+      "height": 1280,
+      "backgroundColor": false,
+      "pointerEvents": "box-none",
+      "children": [
+        {
+          "type": "Button",
+          "id": "level_back_btn",
+          "position": "absolute",
+          "left": 41,
+          "top": 43,
+          "width": 82,
+          "height": 86,
+          "backgroundImage": "image/level_select_slices/attempt_soft_alpha_v3/2_back_button.png",
+          "backgroundFit": "contain",
+          "backgroundColor": false,
+          "borderWidth": 0
+        },
+        {
+          "type": "Panel",
+          "id": "level_title",
+          "position": "absolute",
+          "left": 145,
+          "top": 70,
+          "width": 430,
+          "height": 144,
+          "backgroundImage": "image/level_select_slices/attempt_soft_alpha_v3/10_level_select_title.png",
+          "backgroundFit": "contain",
+          "backgroundColor": false,
+          "pointerEvents": "none"
+        },
+        {
+          "type": "Panel",
+          "id": "level_panel",
+          "position": "absolute",
+          "left": 50,
+          "top": 232,
+          "width": 620,
+          "height": 720,
+          "backgroundImage": "image/level_select_slices/attempt_soft_alpha_v3/1_level_panel_frame.png",
+          "backgroundFit": "sliced",
+          "backgroundSlice": [120, 120, 120, 120],
+          "backgroundColor": false,
+          "pointerEvents": "none"
+        },
+        {
+          "type": "Panel",
+          "id": "level_grid",
+          "position": "absolute",
+          "left": 0,
+          "top": 0,
+          "width": 720,
+          "height": 1280,
+          "backgroundColor": false,
+          "pointerEvents": "box-none",
+          "children": []
+        },
+        {
+          "type": "Label",
+          "id": "level_page_label",
+          "position": "absolute",
+          "left": 270,
+          "top": 1033,
+          "width": 180,
+          "height": 38,
+          "text": "第 1 / 1 页",
+          "fontSize": 22,
+          "fontWeight": "bold",
+          "fontColor": "#BE5C1A",
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "pointerEvents": "none"
+        },
+        {
+          "type": "Button",
+          "id": "level_prev_btn",
+          "position": "absolute",
+          "left": 127,
+          "top": 1099,
+          "width": 202,
+          "height": 86,
+          "backgroundImage": "image/level_select_slices/attempt_soft_alpha_v3/3_prev_button.png",
+          "backgroundFit": "contain",
+          "backgroundColor": false,
+          "borderWidth": 0
+        },
+        {
+          "type": "Button",
+          "id": "level_next_btn",
+          "position": "absolute",
+          "left": 391,
+          "top": 1099,
+          "width": 202,
+          "height": 86,
+          "backgroundImage": "image/level_select_slices/attempt_soft_alpha_v3/4_next_button.png",
+          "backgroundFit": "contain",
+          "backgroundColor": false,
+          "borderWidth": 0
+        }
+      ]
+    }
+  ]
+}

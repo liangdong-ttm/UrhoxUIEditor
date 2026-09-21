@@ -1,0 +1,127 @@
+{
+  "name": "内置示例",
+  "ui": [
+    {
+      "path": "examples/meowdoku/ui/start.ui.json",
+      "name": "start.ui.json",
+      "dir": "examples/meowdoku/ui",
+      "kind": "ui"
+    },
+    {
+      "path": "examples/meowdoku/ui/level_select.ui.json",
+      "name": "level_select.ui.json",
+      "dir": "examples/meowdoku/ui",
+      "kind": "ui"
+    },
+    {
+      "path": "examples/meowdoku/ui/level_tile.ui.json",
+      "name": "level_tile.ui.json",
+      "dir": "examples/meowdoku/ui",
+      "kind": "ui"
+    },
+    {
+      "path": "examples/meowdoku/ui/game_hud.ui.json",
+      "name": "game_hud.ui.json",
+      "dir": "examples/meowdoku/ui",
+      "kind": "ui"
+    },
+    {
+      "path": "examples/meowdoku/ui/dog_park_loading.ui.json",
+      "name": "dog_park_loading.ui.json",
+      "dir": "examples/meowdoku/ui",
+      "kind": "ui"
+    },
+    {
+      "path": "examples/meowdoku/ui/debug_panel.ui.json",
+      "name": "debug_panel.ui.json",
+      "dir": "examples/meowdoku/ui",
+      "kind": "ui"
+    }
+  ],
+  "assets": [
+    {
+      "path": "examples/meowdoku/image/start_ui_buttons_split/5_background_vertical_clean.png",
+      "name": "5_background_vertical_clean.png",
+      "dir": "examples/meowdoku/image/start_ui_buttons_split",
+      "kind": "image",
+      "ref": "image/start_ui_buttons_split/5_background_vertical_clean.png"
+    },
+    {
+      "path": "examples/meowdoku/image/start_ui_buttons_split/1_title_text.png",
+      "name": "1_title_text.png",
+      "dir": "examples/meowdoku/image/start_ui_buttons_split",
+      "kind": "image",
+      "ref": "image/start_ui_buttons_split/1_title_text.png"
+    },
+    {
+      "path": "examples/meowdoku/image/start_ui_buttons_split/2_dog_board.png",
+      "name": "2_dog_board.png",
+      "dir": "examples/meowdoku/image/start_ui_buttons_split",
+      "kind": "image",
+      "ref": "image/start_ui_buttons_split/2_dog_board.png"
+    },
+    {
+      "path": "examples/meowdoku/image/start_ui_buttons_split/3_1_start_button.png",
+      "name": "3_1_start_button.png",
+      "dir": "examples/meowdoku/image/start_ui_buttons_split",
+      "kind": "image",
+      "ref": "image/start_ui_buttons_split/3_1_start_button.png"
+    },
+    {
+      "path": "examples/meowdoku/image/start_ui_buttons_split/3_2_level_button.png",
+      "name": "3_2_level_button.png",
+      "dir": "examples/meowdoku/image/start_ui_buttons_split",
+      "kind": "image",
+      "ref": "image/start_ui_buttons_split/3_2_level_button.png"
+    },
+    {
+      "path": "examples/meowdoku/image/start_ui_buttons_split/3_3_rules_button.png",
+      "name": "3_3_rules_button.png",
+      "dir": "examples/meowdoku/image/start_ui_buttons_split",
+      "kind": "image",
+      "ref": "image/start_ui_buttons_split/3_3_rules_button.png"
+    },
+    {
+      "path": "examples/meowdoku/image/start_ui_buttons_split/3_4_dog_park_button.png",
+      "name": "3_4_dog_park_button.png",
+      "dir": "examples/meowdoku/image/start_ui_buttons_split",
+      "kind": "image",
+      "ref": "image/start_ui_buttons_split/3_4_dog_park_button.png"
+    },
+    {
+      "path": "examples/meowdoku/image/ui_common/ui_lollipop_20260629070007.png",
+      "name": "ui_lollipop_20260629070007.png",
+      "dir": "examples/meowdoku/image/ui_common",
+      "kind": "image",
+      "ref": "image/ui_common/ui_lollipop_20260629070007.png"
+    },
+    {
+      "path": "examples/meowdoku/image/ui_common/ui_paw_print_20260629070007.png",
+      "name": "ui_paw_print_20260629070007.png",
+      "dir": "examples/meowdoku/image/ui_common",
+      "kind": "image",
+      "ref": "image/ui_common/ui_paw_print_20260629070007.png"
+    },
+    {
+      "path": "examples/meowdoku/image/ui_common/ui_heart_full_20260629070007.png",
+      "name": "ui_heart_full_20260629070007.png",
+      "dir": "examples/meowdoku/image/ui_common",
+      "kind": "image",
+      "ref": "image/ui_common/ui_heart_full_20260629070007.png"
+    },
+    {
+      "path": "examples/meowdoku/image/ui_common/ui_star_reward_20260629070007.png",
+      "name": "ui_star_reward_20260629070007.png",
+      "dir": "examples/meowdoku/image/ui_common",
+      "kind": "image",
+      "ref": "image/ui_common/ui_star_reward_20260629070007.png"
+    },
+    {
+      "path": "examples/meowdoku/image/victory_popup_slices/6_1_next_button_no_text.png",
+      "name": "6_1_next_button_no_text.png",
+      "dir": "examples/meowdoku/image/victory_popup_slices",
+      "kind": "image",
+      "ref": "image/victory_popup_slices/6_1_next_button_no_text.png"
+    }
+  ]
+}
