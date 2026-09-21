@@ -8,11 +8,14 @@
   }
 
   function isImageNode(node) {
-    return !!node.backgroundImage;
+    if (!node) return false;
+    if (node.role === "Image" || node._isImage) return true;
+    if (Object.prototype.hasOwnProperty.call(node, "backgroundImage")) return true;
+    return node.backgroundFit === "sliced";
   }
 
   function isTextNode(node) {
-    return node.type === "Label" || node.text != null;
+    return node.type === "Label" || node.type === "Button" || node.text != null;
   }
 
   // open: 默认展开。常改项展开，其余折叠。
@@ -33,7 +36,12 @@
       showIf: isImageNode,
       rows: [
         [{ key: "backgroundImage", label: "Source Image", kind: "asset" }],
-        [{ key: "backgroundFit", label: "Image Type", kind: "enum", options: ["fill", "contain", "cover", "sliced"] }, { key: "backgroundColor", label: "Color", kind: "color" }],
+        [{ key: "backgroundFit", label: "Image Type", kind: "enum", options: [
+          { value: "fill", label: "拉伸 Fill" },
+          { value: "contain", label: "适应 Contain" },
+          { value: "cover", label: "裁切 Cover" },
+          { value: "sliced", label: "九宫格 Sliced" },
+        ] }, { key: "backgroundColor", label: "Color", kind: "color" }],
         [{ key: "slice", label: "Border", kind: "slice" }],
       ],
     },
@@ -45,7 +53,19 @@
       rows: [
         [{ key: "text", label: "Text", kind: "text" }],
         [{ key: "fontSize", label: "字号", kind: "number" }, { key: "fontColor", label: "颜色", kind: "color" }],
-        [{ key: "fontWeight", label: "粗细", kind: "enum", options: ["normal", "bold"] }, { key: "textAlign", label: "对齐", kind: "enum", options: ["left", "center", "right"] }],
+        [{ key: "fontWeight", label: "粗细", kind: "enum", options: [
+          { value: "normal", label: "常规" },
+          { value: "bold", label: "加粗" },
+        ] }],
+        [{ key: "textAlign", label: "水平对齐", kind: "enum", options: [
+          { value: "left", label: "左" },
+          { value: "center", label: "中" },
+          { value: "right", label: "右" },
+        ] }, { key: "verticalAlign", label: "垂直对齐", kind: "enum", options: [
+          { value: "top", label: "上" },
+          { value: "middle", label: "中" },
+          { value: "bottom", label: "下" },
+        ] }],
       ],
     },
     {
@@ -93,11 +113,13 @@
     },
     {
       id: "button",
-      title: "按钮状态",
-      open: false,
+      title: "按钮",
+      open: true,
       showIf: function (node) { return node.type === "Button"; },
       rows: [
-        [{ key: "hoverOpacity", label: "悬停", kind: "number" }, { key: "pressedOpacity", label: "按下", kind: "number" }, { key: "disabled", label: "禁用", kind: "bool" }],
+        [{ key: "disabled", label: "禁用", kind: "bool" }],
+        [{ key: "hoverOpacity", label: "鼠标悬停透明度", kind: "slider", min: 0, max: 1, step: 0.05 }],
+        [{ key: "pressedOpacity", label: "按下透明度", kind: "slider", min: 0, max: 1, step: 0.05 }],
       ],
     },
     {
@@ -114,7 +136,7 @@
         [{ key: "scale", label: "Scale", kind: "number" }, { key: "rotate", label: "旋转", kind: "number" }],
         [{ key: "translateX", label: "TX", kind: "number" }, { key: "translateY", label: "TY", kind: "number" }],
         [{ key: "borderColor", label: "边色", kind: "color" }, { key: "shape", label: "形状", kind: "enum", options: ["rect", "circle"] }],
-        [{ key: "backgroundImageOpacity", label: "图透明", kind: "number" }, { key: "verticalAlign", label: "垂直对齐", kind: "enum", options: ["top", "middle", "bottom"] }],
+        [{ key: "backgroundImageOpacity", label: "图透明", kind: "number" }],
         [{ key: "fontFamily", label: "字体", kind: "text" }],
       ],
     },
@@ -194,8 +216,13 @@
       control.appendChild(empty);
       field.options.forEach(function (opt) {
         var option = document.createElement("option");
-        option.value = opt;
-        option.textContent = opt;
+        if (typeof opt === "object") {
+          option.value = opt.value;
+          option.textContent = opt.label;
+        } else {
+          option.value = opt;
+          option.textContent = opt;
+        }
         control.appendChild(option);
       });
       control.value = value == null ? "" : String(value);
@@ -206,14 +233,76 @@
           }
         });
       }
+    } else if (field.kind === "color") {
+      return makeColorControl(node, field, onChange);
+    } else if (field.kind === "slider") {
+      return makeSliderControl(node, field, onChange);
     } else {
       control = document.createElement("input");
       control.type = "text";
       control.value = formatValue(value);
-      control.placeholder = field.kind === "length" ? "auto" : (field.kind === "color" ? "#RRGGBB" : "");
+      control.placeholder = field.kind === "length" ? "auto" : (field.kind === "number" ? "0~1" : "");
     }
     bindControl(control, node, field, onChange);
     return control;
+  }
+
+  function hex6(value) {
+    if (typeof value !== "string") return "#ffffff";
+    var hex = value.replace("#", "");
+    if (hex.length === 8) hex = hex.slice(0, 6);
+    if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+    if (hex.length !== 6) return "#ffffff";
+    return "#" + hex;
+  }
+
+  function makeSliderControl(node, field, onChange) {
+    var wrap = document.createElement("div");
+    wrap.className = "slider-field";
+    var slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = String(field.min == null ? 0 : field.min);
+    slider.max = String(field.max == null ? 1 : field.max);
+    slider.step = String(field.step == null ? 0.05 : field.step);
+    var value = node[field.key];
+    if (value == null) value = field.max == null ? 1 : field.max;
+    slider.value = String(value);
+    var num = document.createElement("span");
+    num.className = "slider-value";
+    num.textContent = Number(slider.value).toFixed(2);
+    function commit() {
+      node[field.key] = Number(slider.value);
+      num.textContent = node[field.key].toFixed(2);
+      onChange();
+    }
+    slider.addEventListener("input", commit);
+    wrap.appendChild(slider);
+    wrap.appendChild(num);
+    return wrap;
+  }
+
+  function makeColorControl(node, field, onChange) {
+    var wrap = document.createElement("div");
+    wrap.className = "color-field";
+    var picker = document.createElement("input");
+    picker.type = "color";
+    picker.value = hex6(node[field.key]);
+    var text = document.createElement("input");
+    text.type = "text";
+    text.value = formatValue(node[field.key]);
+    picker.addEventListener("input", function () {
+      node[field.key] = picker.value.toUpperCase();
+      text.value = node[field.key];
+      onChange();
+    });
+    text.addEventListener("change", function () {
+      applyField(node, field, text.value);
+      picker.value = hex6(node[field.key]);
+      onChange();
+    });
+    wrap.appendChild(picker);
+    wrap.appendChild(text);
+    return wrap;
   }
 
   function fieldCell(node, field, onChange) {
@@ -285,11 +374,11 @@
 
   function renderAssetField(node, field, onChange) {
     var block = document.createElement("div");
-    block.className = "asset-block";
+    block.className = "asset-block drop-image";
     var path = node[field.key] || "";
     var pathEl = document.createElement("div");
     pathEl.className = "asset-path";
-    pathEl.textContent = path || "None (Sprite)";
+    pathEl.textContent = path || "未选择图片，点「选择图片」";
     pathEl.title = "在项目列表中定位该素材";
     pathEl.addEventListener("click", function () {
       if (path && window.UrhoxProject) window.UrhoxProject.revealAsset(path);
@@ -299,6 +388,7 @@
       var img = document.createElement("img");
       img.className = "asset-thumb";
       img.alt = path;
+      img.draggable = false;
       img.src = window.UrhoxPreview.assetUrl(path);
       block.appendChild(img);
     }
@@ -307,7 +397,7 @@
     var pickBtn = document.createElement("button");
     pickBtn.type = "button";
     pickBtn.className = "ghost";
-    pickBtn.textContent = "替换";
+    pickBtn.textContent = path ? "替换图片" : "选择图片";
     pickBtn.addEventListener("click", function () {
       if (window.UrhoxProject) window.UrhoxProject.beginReplaceImage(node, field.key, onChange);
     });
@@ -322,6 +412,31 @@
     actions.appendChild(pickBtn);
     actions.appendChild(clearBtn);
     block.appendChild(actions);
+    var dropHint = document.createElement("div");
+    dropHint.className = "slice-hint";
+    dropHint.textContent = "可从底部「项目」拖一张图到这里";
+    block.appendChild(dropHint);
+    function takeRef(event) {
+      var raw = event.dataTransfer && event.dataTransfer.getData("text/plain");
+      if (raw && raw.indexOf("urhox-image:") === 0) return raw.slice("urhox-image:".length);
+      return "";
+    }
+    block.addEventListener("dragover", function (event) {
+      if (takeRef(event) || (event.dataTransfer && event.dataTransfer.types && event.dataTransfer.types.length)) {
+        event.preventDefault();
+        block.classList.add("drop-over");
+      }
+    });
+    block.addEventListener("dragleave", function () { block.classList.remove("drop-over"); });
+    block.addEventListener("drop", function (event) {
+      event.preventDefault();
+      block.classList.remove("drop-over");
+      var ref = takeRef(event);
+      if (ref && window.UrhoxProject && window.UrhoxProject.assignImageByRef) {
+        window.UrhoxProject.beginReplaceImage(node, field.key, onChange);
+        window.UrhoxProject.assignImageByRef(ref);
+      }
+    });
     return block;
   }
 

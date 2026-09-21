@@ -155,8 +155,29 @@
         if (event.button !== 0) return;
         if (window.UrhoxView && window.UrhoxView.isSpaceDown()) return;
         if (event.target !== previewEl) return;
+        if (app.createKind) {
+          var p = canvasPoint(app, event);
+          window.UrhoxCommands.createNode(app, app.createKind, Math.round(p.x), Math.round(p.y));
+          if (window.UrhoxPreview && window.UrhoxPreview.setCreateKind) window.UrhoxPreview.setCreateKind(null);
+          return;
+        }
         app.enterPickMode();
       });
+      function onImageDragOver(event) {
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      }
+      function onImageDrop(event) {
+        var raw = event.dataTransfer && event.dataTransfer.getData("text/plain");
+        if (!raw || raw.indexOf("urhox-image:") !== 0) return;
+        event.preventDefault();
+        var p = canvasPoint(app, event);
+        window.UrhoxCommands.createImageFromAsset(app, raw.slice("urhox-image:".length), Math.round(p.x), Math.round(p.y));
+      }
+      previewEl.addEventListener("dragover", onImageDragOver);
+      previewEl.addEventListener("drop", onImageDrop);
+      canvas.addEventListener("dragover", onImageDragOver);
+      canvas.addEventListener("drop", onImageDrop);
     }
 
     canvas.addEventListener("pointerleave", function () {
@@ -179,6 +200,11 @@
       if (window.UrhoxView && window.UrhoxView.isSpaceDown()) return;
       event.preventDefault();
       var p = canvasPoint(app, event);
+      if (app.createKind) {
+        window.UrhoxCommands.createNode(app, app.createKind, Math.round(p.x), Math.round(p.y));
+        if (window.UrhoxPreview && window.UrhoxPreview.setCreateKind) window.UrhoxPreview.setCreateKind(null);
+        return;
+      }
       var handle = hitHandle(app, p.x, p.y);
       if (handle && app.selected) {
         beginMoveOrResize(app, app.selected, handle.id, p, event);
@@ -220,22 +246,26 @@
         if (Math.abs(dx) > Math.abs(dy)) dy = 0;
         else dx = 0;
       }
+      var worldX = app.drag.origX + (mode === "move" ? dx : 0);
+      var worldY = app.drag.origY + (mode === "move" ? dy : 0);
       if (mode === "move") {
         (app.drag.origs || []).forEach(function (item) {
-          root.UrhoxDoc.applyRect(item.node, item.x + dx, item.y + dy, item.w, item.h);
+          root.UrhoxDoc.applyWorldRect(app.tree, item.node, item.x + dx, item.y + dy, item.w, item.h);
         });
       } else {
         var next = window.UrhoxGeom.resizeRect(
           { x: app.drag.origX, y: app.drag.origY, w: app.drag.origW, h: app.drag.origH },
           mode, dx, dy, { shift: event.shiftKey, alt: event.altKey }
         );
-        root.UrhoxDoc.applyRect(app.drag.node, next.x, next.y, next.w, next.h);
+        worldX = next.x;
+        worldY = next.y;
+        root.UrhoxDoc.applyWorldRect(app.tree, app.drag.node, next.x, next.y, next.w, next.h);
       }
       app.guides = [];
       var lines = collectSnapLines(app, app.drag.node);
-      if (mode === "move" && app.drag.node._layout) {
-        var b = app.drag.node._layout;
-        var x = b.x, y = b.y, w = b.w, h = b.h;
+      if (mode === "move") {
+        var lead = (app.drag.origs && app.drag.origs[0]) || { x: app.drag.origX, y: app.drag.origY, w: app.drag.origW, h: app.drag.origH };
+        var x = lead.x + dx, y = lead.y + dy, w = lead.w, h = lead.h;
         var nx = snapValue(x, lines.xs, "x", app.guides);
         var ny = snapValue(y, lines.ys, "y", app.guides);
         var nxc = snapValue(x + w / 2, lines.xs, "x", app.guides);
@@ -251,11 +281,10 @@
         else if (Math.abs(nb - (y + h)) <= SNAP) sy = nb - (y + h);
         if (sx || sy) {
           (app.drag.origs || []).forEach(function (item) {
-            root.UrhoxDoc.applyRect(item.node, item.node.left + sx, item.node.top + sy, item.node.width, item.node.height);
+            root.UrhoxDoc.applyWorldRect(app.tree, item.node, item.x + dx + sx, item.y + dy + sy, item.w, item.h);
           });
         }
       }
-      app.layout();
       app.draw();
     });
 
@@ -264,6 +293,7 @@
       app.drag = null;
       app.marquee = null;
       app.guides = [];
+      if (app.layout) app.layout();
       app.draw();
       app.refreshInspector();
       app.updateMeta();

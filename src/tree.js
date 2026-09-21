@@ -55,6 +55,34 @@
       extraEl.textContent = "  " + label.extra;
       row.appendChild(extraEl);
     }
+    if (selected) {
+      if (opts.onAdd) {
+        var add = document.createElement("button");
+        add.type = "button";
+        add.className = "tree-add";
+        add.textContent = "+";
+        add.title = "添加子节点";
+        add.addEventListener("click", function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          opts.onAdd(node);
+        });
+        row.appendChild(add);
+      }
+      if (opts.onDelete) {
+        var del = document.createElement("button");
+        del.type = "button";
+        del.className = "tree-add";
+        del.textContent = "×";
+        del.title = "删除节点";
+        del.addEventListener("click", function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          opts.onDelete(node);
+        });
+        row.appendChild(del);
+      }
+    }
 
     row.addEventListener("click", function (event) {
       event.preventDefault();

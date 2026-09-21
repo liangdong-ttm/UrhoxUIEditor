@@ -95,7 +95,8 @@
     }
     if (key === "Delete" || key === "Backspace") {
       event.preventDefault();
-      api.remove();
+      if (api.confirmDelete) api.confirmDelete();
+      else api.remove();
       return;
     }
     if (key === "Escape") {

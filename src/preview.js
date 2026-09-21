@@ -32,6 +32,7 @@
     guides: [],
     history: new window.UrhoxHistory.History(80),
     editMode: "screen",
+    createKind: null,
   };
   app.ctx = app.canvas.getContext("2d");
   app.screen.width = app.device.width;
@@ -137,6 +138,12 @@
         var dragged = window.UrhoxDoc.findById(app.tree, key);
         if (dragged && dragged !== target) window.UrhoxCommands.reparent(app, dragged, target);
       },
+      onAdd: function (node) {
+        openAddMenuFor(node);
+      },
+      onDelete: function (node) {
+        confirmDelete(node);
+      },
     });
   }
 
@@ -198,8 +205,58 @@
     setSelection([node], fromTree);
   }
 
+  function hideAddPops() {
+    document.querySelectorAll(".add-pop").forEach(function (el) { el.classList.add("hidden"); });
+  }
+
+  function openAddMenuFor(parent) {
+    selectNode(parent, true);
+    var pop = document.getElementById("treeAddPop");
+    if (pop) pop.classList.remove("hidden");
+  }
+
+  function addChildOfKind(kind) {
+    hideAddPops();
+    var created = window.UrhoxCommands.createNode(app, kind);
+    if (kind === "Image" && created && window.UrhoxProject && window.UrhoxProject.beginReplaceImage) {
+      window.UrhoxProject.beginReplaceImage(created, "backgroundImage", function () {
+        app.pushHistory();
+        app.layout();
+        app.refresh();
+      });
+    }
+  }
+
+  function confirmDelete(node) {
+    node = node || app.selected;
+    if (!node || node === app.tree) {
+      alert("根节点不能删除");
+      return;
+    }
+    var dialog = document.getElementById("deleteDialog");
+    var text = document.getElementById("deleteDialogText");
+    if (text) text.textContent = "确定删除「" + (node.id || node.type || "节点") + "」及其子节点吗？此操作可用撤销恢复。";
+    if (!dialog) {
+      if (window.confirm("确定删除该节点吗？")) {
+        app.selectNode(node);
+        window.UrhoxCommands.remove(app);
+      }
+      return;
+    }
+    dialog.classList.remove("hidden");
+    dialog.dataset.pending = "1";
+    app._pendingDelete = node;
+  }
+
+  function setCreateKind(kind) {
+    app.createKind = kind || null;
+    var preview = document.getElementById("preview");
+    if (preview) preview.classList.toggle("placing", !!app.createKind);
+  }
+
   function enterPickMode() {
     app.lockedFromTree = false;
+    setCreateKind(null);
     selectNode(null);
     var btn = document.getElementById("pickToolBtn");
     if (btn) btn.classList.add("active");
@@ -336,6 +393,7 @@
     paste: function () { Cmd.paste(app); },
     duplicate: function () { Cmd.duplicate(app); },
     remove: function () { Cmd.remove(app); },
+    confirmDelete: function () { confirmDelete(app.selected); },
     nudge: function (dx, dy) { Cmd.nudge(app, dx, dy); },
     toggleVisible: function () { Cmd.toggleVisible(app); },
     toggleLocked: function () { Cmd.toggleLocked(app); },
@@ -354,6 +412,11 @@
     group: function () { Cmd.group(app); },
     ungroup: function () { Cmd.ungroup(app); },
     moveLayer: function (delta, extreme) { Cmd.moveLayer(app, delta, extreme); },
+    setCreateKind: setCreateKind,
+    get createKind() { return app.createKind; },
+    placeImage: function (ref, x, y) {
+      Cmd.createImageFromAsset(app, ref, x, y);
+    },
   };
 
   document.querySelectorAll("[data-align]").forEach(function (btn) {
@@ -368,6 +431,52 @@
   if (ungroupBtn) ungroupBtn.addEventListener("click", function () { Cmd.ungroup(app); });
   var pickToolBtn = document.getElementById("pickToolBtn");
   if (pickToolBtn) pickToolBtn.addEventListener("click", enterPickMode);
+  function bindAddMenu(btnId, popId) {
+    var btn = document.getElementById(btnId);
+    var pop = document.getElementById(popId);
+    if (!btn || !pop) return;
+    btn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      var open = pop.classList.contains("hidden");
+      hideAddPops();
+      if (open) pop.classList.remove("hidden");
+    });
+    pop.querySelectorAll("[data-create]").forEach(function (item) {
+      item.addEventListener("click", function (event) {
+        event.stopPropagation();
+        addChildOfKind(item.getAttribute("data-create"));
+      });
+    });
+  }
+  bindAddMenu("treeAddBtn", "treeAddPop");
+  bindAddMenu("canvasAddBtn", "canvasAddPop");
+  var deleteDialog = document.getElementById("deleteDialog");
+  var deleteOk = document.getElementById("deleteDialogOk");
+  var deleteCancel = document.getElementById("deleteDialogCancel");
+  if (deleteOk) {
+    deleteOk.addEventListener("click", function () {
+      if (app._pendingDelete) {
+        app.selectNode(app._pendingDelete);
+        window.UrhoxCommands.remove(app);
+        app._pendingDelete = null;
+      }
+      if (deleteDialog) deleteDialog.classList.add("hidden");
+    });
+  }
+  if (deleteCancel) {
+    deleteCancel.addEventListener("click", function () {
+      app._pendingDelete = null;
+      if (deleteDialog) deleteDialog.classList.add("hidden");
+    });
+  }
+  var treeDeleteBtn = document.getElementById("treeDeleteBtn");
+  if (treeDeleteBtn) {
+    treeDeleteBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      confirmDelete(app.selected);
+    });
+  }
+  document.addEventListener("click", hideAddPops);
   var deviceSelect = document.getElementById("deviceSelect");
   if (deviceSelect) {
     deviceSelect.addEventListener("change", function () { setDevice(deviceSelect.value); });

@@ -40,7 +40,19 @@
 
     <div class="workspace">
       <aside class="hierarchy">
-        <div class="panel-title">UI节点树</div>
+        <div class="panel-title">
+          <span>UI节点树</span>
+          <div class="add-menu" id="treeAddMenu">
+            <button type="button" class="add-toggle" id="treeAddBtn" title="在选中节点下添加子节点">＋ 添加</button>
+            <button type="button" class="add-toggle ghost" id="treeDeleteBtn" title="删除选中节点">删除</button>
+            <div class="add-pop hidden" id="treeAddPop">
+              <button type="button" data-create="Panel">容器 Panel</button>
+              <button type="button" data-create="Image">图片 Image</button>
+              <button type="button" data-create="Button">按钮 Button</button>
+              <button type="button" data-create="Label">文字 Label</button>
+            </div>
+          </div>
+        </div>
         <div id="tree" class="tree"></div>
       </aside>
       <div class="split-v" data-split="left" title="拖动调整宽度"></div>
@@ -49,6 +61,15 @@
         <div class="canvas-toolbar">
           <div class="tool-group" title="选择">
             <button type="button" class="icon-btn" id="pickToolBtn" title="选择工具：点击空白后可在画面上点选节点">选择</button>
+          </div>
+          <div class="add-menu" id="canvasAddMenu">
+            <button type="button" class="add-toggle" id="canvasAddBtn" title="在当前选中控件内添加">＋ 添加</button>
+            <div class="add-pop hidden" id="canvasAddPop">
+              <button type="button" data-create="Panel">容器 Panel</button>
+              <button type="button" data-create="Image">图片 Image</button>
+              <button type="button" data-create="Button">按钮 Button</button>
+              <button type="button" data-create="Label">文字 Label</button>
+            </div>
           </div>
           <div class="tool-group" title="对齐">
             <button type="button" class="icon-btn" data-align="left" title="左对齐">⇤</button>
@@ -123,6 +144,17 @@
       </ol>
       <div class="dialog-actions">
         <button id="missingUiOk" type="button">知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="deleteDialog" class="dialog-mask hidden">
+    <div class="dialog">
+      <h3>删除节点</h3>
+      <p id="deleteDialogText" class="muted">确定删除该节点及其子节点吗？</p>
+      <div class="dialog-actions">
+        <button id="deleteDialogCancel" type="button" class="ghost">取消</button>
+        <button id="deleteDialogOk" type="button" class="ghost danger">删除</button>
       </div>
     </div>
   </div>

@@ -27,6 +27,7 @@
   var assets = [];
   var selectedAsset = "";
   var replaceTarget = null;
+  var metaFiles = {};
   var dirtyPaths = {};
   var pendingFile = null;
   var saveBtn = document.getElementById("saveBtn");
@@ -150,12 +151,21 @@
         card.title = file.path;
         card.dataset.path = file.path;
         if (file.kind === "image" && window.UrhoxPreview && window.UrhoxPreview.assetUrl) {
-          card.innerHTML = "<img class=\"icon\" alt=\"\" /><div class=\"name\"></div>";
+          card.innerHTML = "<img class=\"icon\" alt=\"\" draggable=\"false\" /><div class=\"name\"></div>";
           card.querySelector("img").src = window.UrhoxPreview.assetUrl(file.ref || file.path);
+          card.querySelector("img").draggable = false;
         } else {
           card.innerHTML = "<div class=\"icon\">" + (file.kind === "font" ? "TTF" : "JSON") + "</div><div class=\"name\"></div>";
         }
         card.querySelector(".name").textContent = file.name;
+        if (file.kind === "image") {
+          card.draggable = true;
+          card.addEventListener("dragstart", function (event) {
+            var ref = file.ref || file.path;
+            event.dataTransfer.setData("text/plain", "urhox-image:" + ref);
+            event.dataTransfer.effectAllowed = "copy";
+          });
+        }
         card.addEventListener("click", function () { onEntryClick(file); });
         grid.appendChild(card);
       });
@@ -172,6 +182,14 @@
       item.innerHTML = "<span></span><span class=\"file-path\"></span>";
       item.querySelector("span").textContent = file.name;
       item.querySelector(".file-path").textContent = file.dir || "";
+      if (file.kind === "image") {
+        item.draggable = true;
+        item.addEventListener("dragstart", function (event) {
+          var ref = file.ref || file.path;
+          event.dataTransfer.setData("text/plain", "urhox-image:" + ref);
+          event.dataTransfer.effectAllowed = "copy";
+        });
+      }
       item.addEventListener("click", function () { onEntryClick(file); });
       list.appendChild(item);
     });
@@ -191,11 +209,23 @@
     openUiFile(file);
   }
 
+  function imageHasMeta(file) {
+    if (!file) return true;
+    if (file.hasMeta === true) return true;
+    var path = file.path || "";
+    return !!(metaFiles[path] || metaFiles[path + ".meta"] || file.meta);
+  }
+
   function applyReplace(file) {
-    if (!replaceTarget) return;
+    if (!replaceTarget || !file || file.kind !== "image") return;
+    if (!imageHasMeta(file)) {
+      alert("这张图没有 .meta（" + file.name + ".meta）。\n游戏资源通常需要 meta。请先在项目里生成 meta，再引用。\n仍会写入路径，但运行时可能加载失败。");
+    }
     replaceTarget.node[replaceTarget.key] = file.ref || file.path;
+    replaceTarget.node.role = "Image";
     var cb = replaceTarget.onChange;
     replaceTarget = null;
+    document.body.classList.remove("picking-image");
     if (cb) cb();
     selectedAsset = file.path;
     renderAll();
@@ -209,7 +239,12 @@
     var dirTitle = document.getElementById("bottomDirTitle");
     var listTitle = document.getElementById("bottomListTitle");
     if (dirTitle) dirTitle.textContent = tab === "project" ? "项目目录" : "UI目录";
-    if (listTitle) listTitle.textContent = tab === "project" ? (replaceTarget ? "选择一张图片替换" : "文件") : "UI配置";
+    if (listTitle) {
+      listTitle.textContent = tab === "project"
+        ? (replaceTarget ? "点选或拖拽一张项目图片" : "文件")
+        : "UI配置";
+    }
+    document.body.classList.toggle("picking-image", !!(replaceTarget && tab === "project"));
     selectedDir = "";
     renderAll();
   }
@@ -373,6 +408,9 @@
         await walkDirectory(entry, path, out);
       } else if (entry.name.indexOf(".ui.json") !== -1) {
         out.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "ui" });
+      } else if (entry.name.slice(-5) === ".meta") {
+        metaFiles[path] = true;
+        metaFiles[path.replace(/\.meta$/, "")] = true;
       } else if (/\.(png|jpg|jpeg|webp|gif|tga)$/i.test(entry.name)) {
         project.handleMap[path] = entry;
         var ref = path.indexOf("assets/") === 0 ? path.slice("assets/".length) : path;
@@ -420,6 +458,7 @@
     project.handleMap = {};
     project.fileBlobs = {};
     assets = [];
+    metaFiles = {};
     selectedDir = "";
     selectedAsset = "";
     writeReady = true;
@@ -539,7 +578,12 @@
       var data = await res.json();
       if (data.name) project.name = data.name;
       if (Array.isArray(data.ui)) project.files = data.ui;
-      if (Array.isArray(data.assets)) assets = data.assets;
+      if (Array.isArray(data.assets)) {
+        assets = data.assets.map(function (a) {
+          a.hasMeta = true;
+          return a;
+        });
+      }
       if (projectNameEl) projectNameEl.textContent = project.name + " · 内置示例";
       renderAll();
     } catch (err) {}
@@ -564,17 +608,42 @@
   }
 
   function beginReplaceImage(node, key, onChange) {
+    if (!node) return;
     replaceTarget = { node: node, key: key, onChange: onChange };
     setBottomTab("project");
     viewMode = "icon";
     if (viewIconBtn) viewIconBtn.classList.add("active");
     if (viewListBtn) viewListBtn.classList.remove("active");
+    if (!assets.length) {
+      alert("当前项目里还没有图片。请把 png/jpg 放到项目的 assets 目录后重新打开项目。只能使用项目内的图片。");
+      replaceTarget = null;
+      document.body.classList.remove("picking-image");
+      return;
+    }
     renderAll();
+    var bar = document.querySelector(".project-bar");
+    if (bar && bar.scrollIntoView) bar.scrollIntoView({ block: "nearest" });
+  }
+
+  function assignImageByRef(ref) {
+    if (!ref) return false;
+    var found = assets.find(function (a) {
+      return a.kind === "image" && (a.ref === ref || a.path === ref || a.path.endsWith("/" + ref));
+    });
+    if (!found) {
+      alert("只能使用项目内的图片。");
+      return false;
+    }
+    applyReplace(found);
+    return true;
   }
 
   document.querySelectorAll(".tab-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      replaceTarget = null;
+      if (replaceTarget && btn.getAttribute("data-tab") !== "project") {
+        replaceTarget = null;
+        document.body.classList.remove("picking-image");
+      }
       setBottomTab(btn.getAttribute("data-tab"));
     });
   });
@@ -591,6 +660,7 @@
     saveCurrent: saveCurrent,
     revealAsset: revealAsset,
     beginReplaceImage: beginReplaceImage,
+    assignImageByRef: assignImageByRef,
   };
 
   renderAll();

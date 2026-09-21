@@ -31,7 +31,7 @@
       var node = app.selected;
       if (!node || node === app.tree || !node._layout) return;
       app.pushHistory();
-      Doc().applyRect(node, node._layout.x + dx, node._layout.y + dy, node._layout.w, node._layout.h);
+      Doc().applyWorldRect(app.tree, node, node._layout.x + dx, node._layout.y + dy, node._layout.w, node._layout.h);
       afterChange(app);
     },
 
@@ -116,7 +116,7 @@
       app.pushHistory();
       var rects = window.UrhoxGeom.alignRects(nodes.map(function (n) { return n._layout; }), mode);
       nodes.forEach(function (node, i) {
-        if (node && rects[i]) Doc().applyRect(node, rects[i].x, rects[i].y, rects[i].w, rects[i].h);
+        if (node && rects[i]) Doc().applyWorldRect(app.tree, node, rects[i].x, rects[i].y, rects[i].w, rects[i].h);
       });
       afterChange(app);
     },
@@ -127,7 +127,7 @@
       app.pushHistory();
       var rects = window.UrhoxGeom.distributeRects(nodes.map(function (n) { return n._layout; }), axis);
       nodes.forEach(function (node, i) {
-        if (node && rects[i]) Doc().applyRect(node, rects[i].x, rects[i].y, rects[i].w, rects[i].h);
+        if (node && rects[i]) Doc().applyWorldRect(app.tree, node, rects[i].x, rects[i].y, rects[i].w, rects[i].h);
       });
       afterChange(app);
     },
@@ -141,10 +141,16 @@
       }
       var oldParent = parentOf(app, node);
       if (!oldParent || oldParent === newParent) return;
+      var worldX = node._layout ? node._layout.x : Number(node.left) || 0;
+      var worldY = node._layout ? node._layout.y : Number(node.top) || 0;
+      var worldW = node._layout ? node._layout.w : node.width;
+      var worldH = node._layout ? node._layout.h : node.height;
       app.pushHistory();
       oldParent.children = (oldParent.children || []).filter(function (c) { return c !== node; });
       newParent.children = newParent.children || [];
       newParent.children.push(node);
+      var origin = newParent._layout || { x: 0, y: 0 };
+      Doc().applyRect(node, worldX - origin.x, worldY - origin.y, worldW, worldH);
       afterChange(app, node);
       app.lockedFromTree = true;
     },
@@ -224,6 +230,61 @@
     selectChild: function (app) {
       if (!app.selected || !app.selected.children || !app.selected.children.length) return;
       app.selectNode(app.selected.children[0]);
+    },
+
+    createNode: function (app, kind, x, y, parent) {
+      if (!app.tree) return null;
+      parent = parent || app.selected || app.tree;
+      if (parent.type === "Label") parent = parentOf(app, parent) || app.tree;
+      var box = parent._layout || { x: 0, y: 0, w: 200, h: 80 };
+      if (x == null) x = box.x + 16;
+      if (y == null) y = box.y + 16;
+      var node;
+      if (kind === "Label") {
+        node = { type: "Label", id: "label", position: "absolute", left: 0, top: 0, width: 200, height: 48, text: "文本", fontSize: 28, fontColor: "#62364D", textAlign: "center", verticalAlign: "middle" };
+      } else if (kind === "Button") {
+        node = {
+          type: "Button",
+          id: "button",
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: 200,
+          height: 72,
+          text: "按钮",
+          fontSize: 24,
+          fontColor: "#FFFFFF",
+          textAlign: "center",
+          verticalAlign: "middle",
+          backgroundColor: "#FF6F97",
+          borderRadius: 24,
+          borderWidth: 0,
+          hoverOpacity: 1,
+          pressedOpacity: 0.86,
+        };
+      } else if (kind === "Image") {
+        node = { type: "Panel", role: "Image", id: "image", position: "absolute", left: 0, top: 0, width: 160, height: 160, backgroundImage: "", backgroundFit: "contain", backgroundColor: "#CCCCCC55" };
+      } else {
+        node = { type: "Panel", id: "panel", position: "absolute", left: 0, top: 0, width: 240, height: 160, backgroundColor: "#FFFFFFCC", borderRadius: 16 };
+      }
+      node.left = Math.round(x - (parent._layout ? parent._layout.x : 0));
+      node.top = Math.round(y - (parent._layout ? parent._layout.y : 0));
+      app.pushHistory();
+      parent.children = parent.children || [];
+      parent.children.push(node);
+      afterChange(app, node);
+      return node;
+    },
+
+    createImageFromAsset: function (app, ref, x, y) {
+      var parent = app.tree;
+      var node = this.createNode(app, "Image", x, y, parent);
+      if (!node) return null;
+      node.backgroundImage = ref;
+      node.backgroundColor = false;
+      node.role = "Image";
+      afterChange(app, node);
+      return node;
     },
   };
 })(window);

@@ -64,6 +64,24 @@
     delete node.bottom;
   }
 
+  function parentOrigin(rootNode, node) {
+    var parent = parentOf(rootNode, node);
+    if (!parent) return { x: 0, y: 0 };
+    if (parent._layout) return { x: parent._layout.x, y: parent._layout.y };
+    return { x: Number(parent.left) || 0, y: Number(parent.top) || 0 };
+  }
+
+  function applyWorldRect(rootNode, node, x, y, w, h) {
+    var origin = parentOrigin(rootNode, node);
+    applyRect(node, x - origin.x, y - origin.y, w, h);
+    if (node._layout) {
+      node._layout.x = x;
+      node._layout.y = y;
+      node._layout.w = Math.max(1, Math.round(w));
+      node._layout.h = Math.max(1, Math.round(h));
+    }
+  }
+
   function cloneForPaste(node) {
     var copy = root.UrhoxHistory.cloneNode(node);
     if (copy.id) copy.id = copy.id + "_copy";
@@ -139,6 +157,8 @@
     findById: findById,
     parentOf: parentOf,
     applyRect: applyRect,
+    applyWorldRect: applyWorldRect,
+    parentOrigin: parentOrigin,
     cloneForPaste: cloneForPaste,
     count: count,
     designSize: designSize,
