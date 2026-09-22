@@ -4,7 +4,7 @@ try {
   for (const name of [
     "config", "yoga-lite", "geom", "history", "doc", "assets", "tree",
     "inspector", "canvas", "commands", "layout", "input", "preview", "save",
-    "hotkeys", "guidance", "editor",
+    "hotkeys", "guidance", "welcome", "editor",
   ]) {
     await import("./" + name + ".js");
   }

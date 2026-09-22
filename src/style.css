@@ -124,6 +124,37 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .perm-badge.warn { background: #854d0e; color: #fef9c3; }
 .perm-badge.bad { background: #7f1d1d; color: #fecaca; }
 .hidden { display: none !important; }
+.welcome-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 48px 24px;
+  background: #17191d;
+}
+.welcome-shell { width: min(760px, 100%); }
+.welcome-kicker { color: #7db7ff; font-size: 12px; letter-spacing: 0.14em; font-weight: 700; }
+.welcome-screen h1 { margin: 14px 0 8px; font-size: clamp(30px, 5vw, 46px); line-height: 1.1; letter-spacing: 0; }
+.welcome-lead { margin: 0; max-width: 520px; color: var(--muted); font-size: 16px; line-height: 1.6; }
+.welcome-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 28px 0 42px; }
+.welcome-primary, .welcome-secondary { min-height: 40px; padding: 0 16px; border-radius: 5px; font: inherit; font-size: 13px; cursor: pointer; }
+.welcome-primary { border: 0; background: #3b82f6; color: #fff; }
+.welcome-primary:hover { background: #2563eb; }
+.welcome-secondary { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+.welcome-secondary:hover { border-color: #5b6475; }
+.welcome-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; border-top: 1px solid var(--line); padding-top: 26px; }
+.welcome-section h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+.welcome-section p, .welcome-section li, .welcome-note { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.welcome-section ol { margin: 0; padding-left: 19px; }
+.welcome-section code { color: var(--text); }
+.welcome-links { display: flex; flex-wrap: wrap; gap: 12px 18px; margin-top: 14px; }
+.welcome-links a { color: #93c5fd; font-size: 13px; }
+.welcome-note { margin: 36px 0 0; border-top: 1px solid var(--line); padding-top: 16px; }
+@media (max-width: 620px) {
+  .welcome-screen { padding: 32px 18px; place-items: start center; }
+  .welcome-grid { grid-template-columns: 1fr; gap: 24px; }
+  .welcome-actions { margin-bottom: 32px; }
+}
 .file-item.dirty::after, .file-card.dirty .name::after { content: " ●"; color: #f59e0b; }
 .dialog-mask {
   padding: 0; border: 0; background: transparent; color: var(--text);

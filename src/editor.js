@@ -583,6 +583,7 @@
     projectNameEl.textContent = project.name + " · " + project.files.length + " 个 UI";
     refreshPermissionUi();
     renderAll();
+    if (window.UrhoxWelcome) window.UrhoxWelcome.showEditor();
     return true;
   }
 
@@ -617,7 +618,10 @@
     setPermBadge("bad", "只读：无法写回本机");
     alert("当前方式只能读取文件，不能写回本机 json。\n请用 Chrome 或 Edge，点「打开项目」并在系统弹窗中允许读写。");
     renderAll();
-    if (uiFiles[0]) openUiFile(uiFiles[0]);
+    if (uiFiles[0]) {
+      openUiFile(uiFiles[0]);
+      if (window.UrhoxWelcome) window.UrhoxWelcome.showEditor();
+    }
     else showMissingUiGuide();
   }
 
@@ -723,6 +727,8 @@
         } finally {
           setOpening(false);
         }
+      } else if (window.UrhoxConfig.LOCAL_PREVIEW && window.UrhoxWelcome) {
+        window.UrhoxWelcome.showEditor();
       }
     } catch (err) {
       var status = document.getElementById("sessionStatus");

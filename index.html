@@ -7,6 +7,37 @@
   <link rel="stylesheet" href="src/style.css" />
 </head>
 <body>
+  <main id="welcomeScreen" class="welcome-screen" aria-labelledby="welcomeTitle">
+    <div class="welcome-shell">
+      <div class="welcome-kicker">URHOX UI EDITOR</div>
+      <h1 id="welcomeTitle">编辑你的游戏 UI</h1>
+      <p class="welcome-lead">在浏览器里打开 UrhoX 项目，直接预览和调整 UI JSON。</p>
+      <div class="welcome-actions">
+        <button id="welcomeOpenProject" type="button" class="welcome-primary">打开项目</button>
+        <button id="welcomeExample" type="button" class="welcome-secondary">体验内置示例</button>
+      </div>
+      <div class="welcome-grid">
+        <section class="welcome-section">
+          <h2>怎么用</h2>
+          <ol>
+            <li>点击「打开项目」，选择包含 <code>assets/</code> 的游戏工程目录。</li>
+            <li>在底部「UI 文档」中选择页面或模板，编辑后保存。</li>
+            <li>没有 UI JSON 时，把 AI Skill 交给你的 AI 自动转换和检查。</li>
+          </ol>
+        </section>
+        <section class="welcome-section">
+          <h2>AI Skill</h2>
+          <p>用于把 Lua UI 转成 `.ui.json`，检查缺图、重复 ID 和导出问题。</p>
+          <div class="welcome-links">
+            <a href="skills/lua-ui-to-json/" target="_blank" rel="noopener noreferrer">查看 Skill</a>
+            <a href="skills/lua-ui-to-json/SKILL.md" download>下载 SKILL.md</a>
+            <a href="https://github.com/liangdong-ttm/UrhoxUIEditor/archive/refs/heads/main.zip" target="_blank" rel="noopener noreferrer">下载完整仓库</a>
+          </div>
+        </section>
+      </div>
+      <p class="welcome-note">项目文件只在你的浏览器中读取。GitHub Pages 不能直接写回仓库，保存本地项目需要 Chrome 或 Edge 的目录授权。</p>
+    </div>
+  </main>
   <div class="editor">
     <header class="chrome">
       <div class="menubar">

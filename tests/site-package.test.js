@@ -7,7 +7,7 @@ const { buildSite } = require("../tools/build-site.cjs");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "urhox-site-"));
 try {
   const output = buildSite(path.join(temp, "site"));
-  for (const file of ["index.html", "src/bootstrap.js", "src/guidance.js", "src/style.css",
+  for (const file of ["index.html", "src/bootstrap.js", "src/guidance.js", "src/welcome.js", "src/style.css",
     "vendor/yoga-layout/dist/src/index.js", "vendor/yoga-layout/dist/binaries/yoga-wasm-base64-esm.js",
     "vendor/yoga-layout/LICENSE", "skills/lua-ui-to-json/SKILL.md",
     "skills/lua-ui-to-json/scripts/ui-json-check.js", "skills/lua-ui-to-json/scripts/check-ui.cjs", ".nojekyll"]) {
