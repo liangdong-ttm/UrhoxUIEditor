@@ -21,7 +21,7 @@ function buildSite(output = path.join(root, "out/site")) {
   return output;
 }
 if (require.main === module) {
-  try { console.log(buildSite()); }
+  try { console.log(buildSite(process.argv[2] ? path.resolve(process.argv[2]) : undefined)); }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }
 module.exports = { buildSite };

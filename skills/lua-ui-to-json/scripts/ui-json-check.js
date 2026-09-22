@@ -94,6 +94,15 @@
         }
       });
       resource(node.backgroundImage, pointer + "/backgroundImage");
+      if (node.component != null) {
+        if (token(node.component)) {
+          parameterized = true;
+        } else if (typeof node.component !== "string" || !node.component.trim()) {
+          issue("UI_COMPONENT_TYPE", "error", pointer + "/component", "组件引用必须是非空字符串。");
+        } else if (options.resourceExists && !options.resourceExists(node.component)) {
+          issue("UI_COMPONENT_MISSING", "error", pointer + "/component", "找不到组件文件：" + node.component);
+        }
+      }
       if (node.$repeat) {
         issue("UI_EDITOR_REPEAT", "warning", pointer + "/$repeat",
           "$repeat 是编辑器扩展，不证明引擎会生成列表；运行时应核对模板实例化。");

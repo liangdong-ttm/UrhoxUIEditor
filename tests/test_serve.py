@@ -22,6 +22,9 @@ class ProjectPreviewTests(unittest.TestCase):
         serve.PROJECT = cls.root / "game"
         assets = serve.PROJECT / "assets"
         assets.mkdir(parents=True)
+        (serve.PROJECT / ".project").mkdir(parents=True)
+        (serve.PROJECT / ".project" / "project.json").write_text(
+            json.dumps({"taptap_publish": {"screen_orientation": "landscape"}}))
         (assets / "screen.ui.json").write_text('{"type":"Panel"}')
         (assets / "screen.ui.json.meta").write_text("{}")
         (assets / "other.UI.JSON").write_text("{}")
@@ -45,6 +48,8 @@ class ProjectPreviewTests(unittest.TestCase):
     def test_manifest_excludes_meta_and_symlinks(self):
         with urlopen(self.base + "/api/project") as response:
             manifest = json.load(response)
+        self.assertEqual(manifest["config"]["orientation"], "landscape")
+        self.assertEqual(manifest["config"]["source"], ".project/project.json")
         self.assertEqual({f["name"] for f in manifest["ui"]},
                          {"screen.ui.json", "other.UI.JSON"})
         self.assertEqual(len(manifest["assets"]), 1)

@@ -13,6 +13,26 @@ PORT = 4190
 PROJECT = None
 
 
+def read_project_config(project):
+    """Return the public subset of .project/project.json without blocking assets."""
+    source = ".project/project.json"
+    path = project / source
+    result = {"orientation": None, "source": source}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
+        publish = raw.get("taptap_publish") if isinstance(raw, dict) else None
+        publish = publish if isinstance(publish, dict) else raw if isinstance(raw, dict) else {}
+        orientation = publish.get("screen_orientation") or publish.get("orientation")
+        if orientation in ("landscape", "portrait"):
+            result["orientation"] = orientation
+        return result
+    except FileNotFoundError:
+        return result
+    except (OSError, ValueError) as error:
+        result["error"] = str(error)
+        return result
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
@@ -43,7 +63,8 @@ class Handler(SimpleHTTPRequestHandler):
                                  ref=file.relative_to(PROJECT / "assets").as_posix(),
                                  hasMeta=Path(str(file) + ".meta").is_file())
                     assets.append(entry)
-            body = json.dumps({"name": PROJECT.name, "ui": entries, "assets": assets}).encode()
+            body = json.dumps({"name": PROJECT.name, "ui": entries, "assets": assets,
+                               "config": read_project_config(PROJECT)}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

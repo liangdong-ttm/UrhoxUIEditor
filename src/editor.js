@@ -19,6 +19,8 @@
     handleMap: {},
     rootHandle: null,
     fileBlobs: {},
+    config: null,
+    configError: "",
   };
   var selectedDir = "";
   var viewMode = "list";
@@ -480,11 +482,15 @@
       assetRoot = file.path.replace(/assets\/.*$/, "assets/");
     }
     if (window.UrhoxPreview) {
+      if (window.UrhoxPreview.setProjectConfig) {
+        window.UrhoxPreview.setProjectConfig(targetProject.config || null);
+      }
       var opts = {
         path: file.path,
         assetRoot: file.assetRoot || assetRoot,
         handleMap: targetProject.handleMap,
         blobMap: targetProject.fileBlobs,
+        projectConfig: targetProject.config || null,
       };
       if (window.UrhoxPreview.loadTreeAsync) {
         await window.UrhoxPreview.loadTreeAsync(json, opts);
@@ -494,6 +500,18 @@
     }
     setDirty(file.path, false);
     renderAll();
+  }
+
+  async function readProjectConfigFile(file, source) {
+    try {
+      var raw = await file.getFile();
+      var text = await raw.text();
+      return window.UrhoxProjectConfig
+        ? window.UrhoxProjectConfig.parse(text, source)
+        : { config: JSON.parse(text), error: "" };
+    } catch (error) {
+      return { config: null, error: error && error.message ? error.message : String(error) };
+    }
   }
 
   async function walkDirectory(handle, prefix, draft) {
@@ -506,6 +524,10 @@
       if (entry.kind === "directory") {
         if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "urhox-libs") continue;
         await walkDirectory(entry, path, draft);
+      } else if (path === ".project/project.json") {
+        var parsed = await readProjectConfigFile(entry, path);
+        draft.project.config = parsed.config;
+        draft.project.configError = parsed.error;
       } else if (/\.ui\.json$/i.test(entry.name)) {
         draft.project.files.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "ui" });
         draft.project.handleMap[path] = entry;
@@ -558,7 +580,7 @@
       return false;
     }
     var draft = {
-      project: { name: handle.name, rootHandle: handle, files: [], handleMap: {}, fileBlobs: {} },
+      project: { name: handle.name, rootHandle: handle, files: [], handleMap: {}, fileBlobs: {}, config: null, configError: "" },
       assets: [],
       metaFiles: {},
     };
@@ -587,42 +609,79 @@
     return true;
   }
 
-  function filesFromInput(fileList) {
-    project.files = [];
-    project.handleMap = {};
-    project.fileBlobs = {};
-    selectedDir = "";
-    var uiFiles = [];
-    assets = [];
-    selectedAsset = "";
-    Array.from(fileList).forEach(function (file) {
-      var path = file.webkitRelativePath || file.name;
-      if (/\.ui\.json$/i.test(path)) {
-        uiFiles.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "ui" });
+  async function filesFromInput(fileList) {
+    var files = Array.from(fileList || []);
+    var draft = {
+      project: { name: "本地项目", files: [], handleMap: {}, fileBlobs: {}, config: null, configError: "" },
+      assets: [],
+      metaFiles: {},
+    };
+    try {
+      for (var i = 0; i < files.length; i++) {
+        var file = files[i];
+        var path = file.webkitRelativePath || file.name;
+        var relative = path.indexOf("/") >= 0 ? path.slice(path.indexOf("/") + 1) : path;
+        if (relative === ".project/project.json") {
+          var configText = await file.text();
+          var parsed = window.UrhoxProjectConfig
+            ? window.UrhoxProjectConfig.parse(configText, ".project/project.json")
+            : { config: JSON.parse(configText), error: "" };
+          draft.project.config = parsed.config;
+          draft.project.configError = parsed.error;
+        }
+        if (/\.ui\.json$/i.test(path)) {
+          draft.project.files.push({ path: path, name: basename(path), file: file,
+            dir: dirname(path), kind: "ui" });
+        }
+        draft.project.fileBlobs[path] = file;
+        var ref = path.indexOf("assets/") >= 0 ? path.replace(/^.*?assets\//, "") : path;
+        draft.project.fileBlobs[ref] = file;
+        if (/\.meta$/i.test(path)) {
+          draft.metaFiles[path] = true;
+          draft.metaFiles[path.replace(/\.meta$/, "")] = true;
+        }
+        if (/\.(png|jpg|jpeg|webp|gif|tga)$/i.test(path)) {
+          draft.assets.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "image", ref: ref });
+        } else if (/\.(ttf|otf|woff2?)$/i.test(path)) {
+          draft.assets.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "font" });
+        }
       }
-      project.fileBlobs[path] = file;
-      var ref = path.indexOf("assets/") >= 0 ? path.replace(/^.*?assets\//, "") : path;
-      project.fileBlobs[ref] = file;
-      if (/\.(png|jpg|jpeg|webp|gif|tga)$/i.test(path)) {
-        assets.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "image", ref: ref });
-      } else if (/\.(ttf|otf|woff2?)$/i.test(path)) {
-        assets.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "font" });
-      }
-    });
-    writeReady = false;
-    project.files = uiFiles;
+    } catch (error) {
+      alert("读取本地项目失败：" + (error && error.message ? error.message : String(error)));
+      return false;
+    }
+    draft.project.files.sort(function (a, b) { return a.path.localeCompare(b.path); });
+    if (!draft.project.files.length) {
+      showMissingUiGuide(draft.project.name);
+      return false;
+    }
+    if (!await allowLeave()) return false;
+    try {
+      await loadUiFile(draft.project.files[0], draft.project);
+    } catch (error) {
+      alert("无法打开「" + draft.project.files[0].name + "」：" +
+        (error && error.message ? error.message : String(error)));
+      return false;
+    }
+    var firstPath = files[0] && (files[0].webkitRelativePath || files[0].name || "");
+    draft.project.name = firstPath.split("/")[0] || "本地项目";
+    project = draft.project;
+    assets = draft.assets;
+    metaFiles = draft.metaFiles;
     resourceIndexReady = true;
-    project.name = (fileList[0] && fileList[0].webkitRelativePath.split("/")[0]) || "本地项目";
+    dirtyPaths = {};
+    replaceTarget = null;
+    document.body.classList.remove("picking-image");
+    selectedDir = "";
+    selectedAsset = "";
+    writeReady = false;
     projectNameEl.textContent = project.name + " · " + project.files.length + " 个 UI（只读）";
     refreshPermissionUi();
     setPermBadge("bad", "只读：无法写回本机");
     alert("当前方式只能读取文件，不能写回本机 json。\n请用 Chrome 或 Edge，点「打开项目」并在系统弹窗中允许读写。");
     renderAll();
-    if (uiFiles[0]) {
-      openUiFile(uiFiles[0]);
-      if (window.UrhoxWelcome) window.UrhoxWelcome.showEditor();
-    }
-    else showMissingUiGuide();
+    if (window.UrhoxWelcome) window.UrhoxWelcome.showEditor();
+    return true;
   }
 
   openProjectBtn.addEventListener("click", async function () {
@@ -707,6 +766,10 @@
       var data = await res.json();
       if (opening || project !== initialProject) return;
       if (data.name) project.name = data.name;
+      project.config = data.config && window.UrhoxProjectConfig
+        ? window.UrhoxProjectConfig.normalize(data.config, data.config.source)
+        : data.config || null;
+      project.configError = project.config && project.config.error ? project.config.error : "";
       if (Array.isArray(data.ui)) project.files = data.ui.filter(function (file) {
         return /\.ui\.json$/i.test(file.path);
       });

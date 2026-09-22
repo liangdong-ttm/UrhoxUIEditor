@@ -1,5 +1,6 @@
 "use strict";
 const assert = require("assert");
+const child = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -9,7 +10,7 @@ try {
   const output = buildSite(path.join(temp, "site"));
   for (const file of ["index.html", "src/bootstrap.js", "src/guidance.js", "src/welcome.js", "src/style.css",
     "vendor/yoga-layout/dist/src/index.js", "vendor/yoga-layout/dist/binaries/yoga-wasm-base64-esm.js",
-    "vendor/yoga-layout/LICENSE", "skills/lua-ui-to-json/SKILL.md",
+    "vendor/yoga-layout/LICENSE", "src/project-config.js", "skills/lua-ui-to-json/SKILL.md",
     "skills/lua-ui-to-json/scripts/ui-json-check.js", "skills/lua-ui-to-json/scripts/check-ui.cjs", ".nojekyll"]) {
     assert(fs.existsSync(path.join(output, file)), file);
   }
@@ -43,6 +44,10 @@ try {
     assert(fs.existsSync(path.join(skill, match[1])), "skill dependency missing: " + match[1]);
   }
   assert.throws(() => buildSite(output), /EEXIST/, "never overlay unrelated/stale release output");
+  const cliOutput = path.join(temp, "cli-site");
+  const cli = child.spawnSync(process.execPath, [path.join(__dirname, "../tools/build-site.cjs"), cliOutput], { encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr || cli.stdout);
+  assert(fs.existsSync(path.join(cliOutput, "index.html")), "CLI must honor the output directory argument");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

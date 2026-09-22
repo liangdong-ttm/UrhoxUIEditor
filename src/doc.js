@@ -322,6 +322,40 @@
     return preview;
   }
 
+  function componentValue(components, ref) {
+    if (!ref) return null;
+    return components[ref] || components["assets/" + ref] || components[ref.replace(/^assets\//, "")]
+      || null;
+  }
+
+  function expandComponents(source, components) {
+    var preview = root.UrhoxHistory.cloneForHistory(source);
+    components = components || {};
+    walk(preview, function (node) {
+      if (!node || !node.component) return;
+      var template = componentValue(components, node.component);
+      if (!template) {
+        node._componentMissing = true;
+        return;
+      }
+      var instance = root.UrhoxHistory.cloneForHistory(node);
+      var expanded = root.UrhoxHistory.cloneForHistory(template);
+      var children = expanded.children || [];
+      Object.keys(instance).forEach(function (key) {
+        if (key !== "children" && key !== "component") expanded[key] = instance[key];
+      });
+      expanded.children = children;
+      Object.keys(node).forEach(function (key) { delete node[key]; });
+      Object.keys(expanded).forEach(function (key) { node[key] = expanded[key]; });
+      node._componentRef = instance.component;
+      node.children.forEach(function (child) {
+        walk(child, function (descendant) { descendant._generated = true; });
+      });
+    });
+    ensureEditorIds(preview);
+    return preview;
+  }
+
   function isGenerated(node) {
     return !!(node && node._generated);
   }
@@ -462,6 +496,7 @@
     count: count,
     designSize: designSize,
     expandRepeats: expandRepeats,
+    expandComponents: expandComponents,
     cloneTree: cloneTree,
     expandPropDefaults: expandPropDefaults,
     isGenerated: isGenerated,

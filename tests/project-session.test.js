@@ -54,7 +54,7 @@ async function setup(options = {}) {
     if (!elements.has(id)) elements.set(id, new Element());
     return elements.get(id);
   };
-  const state = { tree: null, path: "", marked: null, alerts: [], loads: [], write: async () => ({ ok: true }) };
+  const state = { tree: null, path: "", marked: null, alerts: [], loads: [], config: null, write: async () => ({ ok: true }) };
   state.nextFolder = folder("first", [file("a.ui.json", async () =>
     '{"type":"Panel","width":100,"height":100,"text":"old"}')]);
   const preview = {
@@ -67,6 +67,7 @@ async function setup(options = {}) {
       state.path = opts.path;
       state.loads.push(opts.path);
     },
+    setProjectConfig(config) { state.config = config; },
     markClean(json) {
       state.marked = json;
       const baseline = json || state.tree;
@@ -96,6 +97,13 @@ async function setup(options = {}) {
       return { ok: true, json: async () => options.manifest || ({ ui: [], assets: [] }) };
     },
     UrhoxConfig: { LOCAL_PREVIEW: false },
+    UrhoxProjectConfig: {
+      parse(text, source) {
+        const raw = JSON.parse(text);
+        return { config: { orientation: raw.taptap_publish?.screen_orientation || null, source }, error: "" };
+      },
+      normalize(raw, source) { return { orientation: raw.orientation || null, source }; },
+    },
     UrhoxWelcome: welcome,
     UrhoxPreview: preview,
     UrhoxSave: {
@@ -131,6 +139,33 @@ module.exports = (async function () {
     await byId("openProjectBtn").fire("click");
     assert.equal(byId("folderInput").clicked, 1,
       "unsupported directory picker falls back to the browser folder input");
+  }
+  {
+    const { api, state, byId } = await setup();
+    const originalProject = api.get();
+    byId("folderInput").files = [{
+      name: "broken.ui.json",
+      webkitRelativePath: "broken-project/assets/broken.ui.json",
+      text: async () => { throw new Error("read failed"); },
+    }];
+    await byId("folderInput").fire("change");
+    await flush();
+    assert.equal(api.get(), originalProject, "failed folder import must keep the active project object");
+    assert.equal(api.get().files[0].path, "a.ui.json", "failed folder import must keep the active file list");
+    assert.equal(state.path, "a.ui.json", "failed folder import must keep the active document");
+  }
+  {
+    const pending = deferred();
+    const { state } = await setup({ manifest: {
+      name: "横屏项目",
+      config: { orientation: "landscape", source: ".project/project.json" },
+      ui: [{ path: "assets/ui/page.ui.json", name: "page.ui.json" }], assets: [],
+    }, deferInitialLoad: true,
+    uiText: { path: "assets/ui/page.ui.json", text: pending.promise } });
+    pending.resolve('{"type":"Panel","width":1920,"height":1080}');
+    for (let i = 0; i < 8; i++) await flush();
+    assert.equal(state.config.orientation, "landscape",
+      "manifest project config must reach preview before the first document is shown");
   }
   {
     const pending = deferred();
@@ -250,6 +285,19 @@ module.exports = (async function () {
     assert.equal(writes, 1, "repeated Save clicks must share the in-flight write");
     pending.resolve({ ok: true });
     await Promise.all([first, second]);
+  }
+  {
+    const { api, state, byId } = await setup();
+    state.nextFolder = folder("landscape", [
+      folder(".project", [file("project.json", async () =>
+        '{"taptap_publish":{"screen_orientation":"landscape"}}')]),
+      folder("assets", [file("page.ui.json", async () =>
+        '{"type":"Panel","width":1920,"height":1080}')]),
+    ]);
+    await byId("openProjectBtn").fire("click");
+    assert.equal(api.get().config.orientation, "landscape",
+      "directory handles must read .project/project.json before loading the first UI");
+    assert.equal(state.config.orientation, "landscape");
   }
   {
     const { api, state, byId } = await setup();

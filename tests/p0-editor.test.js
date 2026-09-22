@@ -82,6 +82,21 @@ assert(page.children[0].children.length === 0, "source keeps empty $repeat child
 assert(page.children[0].$repeat.template === "tile", "source keeps $repeat");
 assert(preview.children[0].children[0]._generated, "expanded tiles are generated");
 
+var componentPage = {
+  type: "Panel", width: 400, height: 240,
+  children: [{ type: "Panel", id: "dock", component: "ui/components/dock.ui.json", width: 300, height: 80 }],
+};
+var componentPreview = Doc.expandComponents(componentPage, {
+  "ui/components/dock.ui.json": {
+    type: "Panel", id: "dock-template", width: 900, height: 90,
+    children: [{ type: "Button", id: "action", width: 100, height: 40, text: "Go" }],
+  },
+});
+assert(componentPreview.children[0].children.length === 1, "component preview expands referenced children");
+assert(componentPreview.children[0].width === 300, "component instance overrides template dimensions");
+assert(componentPreview.children[0].children[0]._generated, "component children are preview-only");
+assert(!componentPage.children[0].children, "component expansion does not mutate source JSON");
+
 // P0-3 nested world rect / group
 var image = { type: "Panel", id: "image", position: "absolute", left: 10, top: 20, width: 30, height: 40 };
 var panelB = { type: "Panel", id: "B", position: "absolute", left: 5, top: 5, width: 80, height: 80, children: [image] };

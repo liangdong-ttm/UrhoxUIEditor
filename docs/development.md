@@ -71,7 +71,8 @@ python3 -B tests/test_serve.py
 node tests/project-acceptance.js "/absolute/path/to/game"
 ```
 
-最后一项检查 UI 布局数值、图片引用和源文档往返不变，不代表与游戏运行时像素一致。
+最后一项会递归检查 `assets/**/*.ui.json`，并展开可解析的组件与 `$repeat` 模板，检查 UI 布局数值、图片引用和源文档往返不变；
+不代表与游戏运行时像素一致。需要全项目导出诊断、方向检查和警告清单时，使用公开 skill 的 `scripts/check-ui.cjs`。
 
 ---
 

@@ -19,6 +19,9 @@
     sourceTree: null,
     tree: null,
     templates: {},
+    components: {},
+    missingComponents: [],
+    projectConfig: null,
     path: DEFAULT_UI,
     device: DEVICES["1080p"] || DEVICES[Object.keys(DEVICES)[0]],
     screen: { width: 1080, height: 1920 },
@@ -113,7 +116,7 @@
     var found = false;
     window.UrhoxDoc.walk(tree, function (node) {
       if (!node) return;
-      if (node.$repeat) found = true;
+      if (node.$repeat || node.component) found = true;
       Object.keys(node).forEach(function (key) {
         if (typeof node[key] === "string" && node[key].charAt(0) === "$") found = true;
       });
@@ -127,7 +130,8 @@
     if (!needsPreviewCopy(app.sourceTree)) {
       app.tree = app.sourceTree;
     } else {
-      app.tree = window.UrhoxDoc.expandRepeats(app.sourceTree, app.templates || {});
+      var withComponents = window.UrhoxDoc.expandComponents(app.sourceTree, app.components || {});
+      app.tree = window.UrhoxDoc.expandRepeats(withComponents, app.templates || {});
       window.UrhoxDoc.expandPropDefaults(app.tree);
     }
     window.UrhoxDoc.ensureEditorIds(app.tree);
@@ -251,7 +255,10 @@
   function updateMeta() {
     if (!app.metaEl) return;
     var mode = app.editMode === "prefab" ? "组件" : "页面";
-    app.metaEl.textContent = mode + " · " + app.path + " · " + window.UrhoxDoc.count(app.sourceTree || app.tree) + " nodes";
+    var warning = app.missingComponents.length
+      ? " · 缺少组件 " + app.missingComponents.join(", ")
+      : "";
+    app.metaEl.textContent = mode + " · " + app.path + " · " + window.UrhoxDoc.count(app.sourceTree || app.tree) + " nodes" + warning;
   }
 
   function updateToolbarState() {
@@ -487,11 +494,32 @@
     return templates;
   }
 
+  async function loadComponents(tree, options) {
+    var needed = [];
+    window.UrhoxDoc.walk(tree, function (node) {
+      if (node.component) needed.push(node.component);
+    });
+    var components = {};
+    var missing = [];
+    for (var i = 0; i < needed.length; i++) {
+      var rel = needed[i];
+      var data = await readJsonFromContext(rel, options);
+      if (data) {
+        window.UrhoxDoc.expandPropDefaults(data);
+        components[rel] = data;
+      } else if (missing.indexOf(rel) < 0) {
+        missing.push(rel);
+      }
+    }
+    return { components: components, missing: missing };
+  }
+
   function loadTree(tree, options) {
     options = options || {};
     window.UrhoxDoc.validateTree(tree);
     // Resolve and lay out a detached candidate before replacing a live document.
-    var candidate = window.UrhoxDoc.expandRepeats(tree, options.templates || {});
+    var candidate = window.UrhoxDoc.expandComponents(tree, options.components || {});
+    candidate = window.UrhoxDoc.expandRepeats(candidate, options.templates || {});
     window.UrhoxDoc.expandPropDefaults(candidate);
     window.UrhoxDoc.validateTree(candidate);
     var size = window.UrhoxDoc.designSize(candidate);
@@ -500,6 +528,9 @@
     app.cleanState = JSON.stringify(window.UrhoxHistory.cloneForSave(tree));
     window.UrhoxDoc.ensureEditorIds(app.sourceTree);
     app.templates = options.templates || {};
+    app.components = options.components || {};
+    app.missingComponents = options.missingComponents || [];
+    setProjectConfig(options.projectConfig);
     app.path = options.path || DEFAULT_UI;
     window.UrhoxAssets.setContext({
       assetRoot: options.assetRoot != null ? options.assetRoot : DEFAULT_ASSET_ROOT,
@@ -532,6 +563,18 @@
       draw();
       if (window.UrhoxView) window.UrhoxView.fit();
     }
+  }
+
+  function setProjectConfig(config) {
+    app.projectConfig = config || null;
+    var id = window.UrhoxProjectConfig
+      ? window.UrhoxProjectConfig.preferredDeviceId(app.projectConfig, DEVICES)
+      : (app.projectConfig && app.projectConfig.orientation === "landscape" ? "1080p-land" : "1080p");
+    app.device = DEVICES[id] || DEVICES["1080p"] || DEVICES[Object.keys(DEVICES)[0]];
+    app.screen.width = app.device.width;
+    app.screen.height = app.device.height;
+    var select = document.getElementById("deviceSelect");
+    if (select && app.device.id) select.value = app.device.id;
   }
 
   app.origin = origin;
@@ -572,6 +615,9 @@
       options = options || {};
       window.UrhoxDoc.validateTree(tree);
       options.templates = await loadTemplates(tree, options);
+      var componentResult = await loadComponents(tree, options);
+      options.components = componentResult.components;
+      options.missingComponents = componentResult.missing;
       loadTree(tree, options);
     },
     get currentPath() { return app.path; },
@@ -621,6 +667,8 @@
       return window.UrhoxGeom.boundsOf(app.selectedNodes.map(function (n) { return n._layout; }).filter(Boolean));
     },
     setDevice: setDevice,
+    setProjectConfig: setProjectConfig,
+    getProjectConfig: function () { return app.projectConfig; },
     align: function (mode) { Cmd.align(app, mode); },
     distribute: function (axis) { Cmd.distribute(app, axis); },
     group: function () { Cmd.group(app); },
@@ -708,9 +756,11 @@
     return response.json();
   }).then(function (tree) {
     var opts = { path: uiUrl, assetRoot: DEFAULT_ASSET_ROOT };
-    return loadTemplates(tree, opts).then(function (templates) {
+    return Promise.all([loadTemplates(tree, opts), loadComponents(tree, opts)]).then(function (results) {
       if (app.sourceTree || (window.UrhoxProject && window.UrhoxProject.isOpening())) return;
-      opts.templates = templates;
+      opts.templates = results[0];
+      opts.components = results[1].components;
+      opts.missingComponents = results[1].missing;
       loadTree(tree, opts);
     });
   }).catch(function (err) {

@@ -29,6 +29,8 @@ assert(template.skipped.includes("runtime-equivalence"));
 assert(check({ type: "ResourcePill" }).diagnostics.some(d => d.code === "UI_PREVIEW_TYPE"));
 assert(check({ type: "Panel", backgroundImage: "../private.png" }).diagnostics.some(d => d.code === "UI_RESOURCE_PATH"));
 assert(check({ type: "Panel", backgroundImage: "uuid://known" }).diagnostics.some(d => d.code === "UI_RESOURCE_UNRESOLVED"));
+assert(check({ type: "Panel", component: "ui/components/missing.ui.json" }, { resourceExists: () => false })
+  .diagnostics.some(d => d.code === "UI_COMPONENT_MISSING"));
 const before = JSON.stringify(tree);
 check(tree);
 assert.equal(JSON.stringify(tree), before, "checking is read-only");
@@ -40,17 +42,29 @@ try {
   const source = path.join(ui, "page.ui.json");
   fs.writeFileSync(source, JSON.stringify(valid));
   fs.writeFileSync(source + ".meta", "not JSON");
+  const manifestDir = path.join(dir, "assets/ui");
+  fs.writeFileSync(path.join(manifestDir, "ui-export-manifest.ui.json"), JSON.stringify({
+    type: "Panel",
+    pages: ["ui/nested/page.ui.json"],
+    components: [],
+    templates: [],
+  }));
+  fs.mkdirSync(path.join(dir, "assets/ui/templates"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "assets/ui/templates", "unlisted.ui.json"), JSON.stringify(valid));
   const cli = path.resolve(__dirname, "../skills/lua-ui-to-json/scripts/check-ui.cjs");
   const run = args => spawnSync(process.execPath, [cli, "--project", dir, "--format", "json", ...args], { encoding: "utf8" });
   let result = run([]);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).files, 1, "recursive UI scan excludes meta");
+  const initialReport = JSON.parse(result.stdout);
+  assert.equal(initialReport.files, 3, "recursive UI scan excludes meta");
+  assert(initialReport.diagnostics.some(d => d.code === "UI_MANIFEST_STALE"),
+    "unlisted exported templates should be reported as stale manifest coverage");
   fs.writeFileSync(path.join(ui, "broken.ui.json"), "{bad");
   fs.writeFileSync(path.join(ui, "missing.ui.json"), JSON.stringify({ type: "Panel", backgroundImage: "image/missing.png" }));
   result = run([]);
   assert.equal(result.status, 1);
   const report = JSON.parse(result.stdout);
-  assert.equal(report.files, 3, "bad JSON must not abort other files");
+  assert.equal(report.files, 5, "bad JSON must not abort other files");
   assert(report.diagnostics.some(d => d.code === "UI_JSON_PARSE"));
   assert(report.diagnostics.some(d => d.code === "UI_RESOURCE_MISSING"));
   assert.equal(fs.readFileSync(source, "utf8"), JSON.stringify(valid));

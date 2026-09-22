@@ -3,7 +3,7 @@ try {
   window.UrhoxYogaEngine = (await import("../vendor/yoga-layout/dist/src/index.js")).default;
   await import("../skills/lua-ui-to-json/scripts/ui-json-check.js?" + cacheVersion);
   for (const name of [
-    "config", "yoga-lite", "geom", "history", "doc", "assets", "tree",
+    "config", "project-config", "yoga-lite", "geom", "history", "doc", "assets", "tree",
     "inspector", "canvas", "commands", "layout", "input", "preview", "save",
     "hotkeys", "guidance", "editor",
   ]) {

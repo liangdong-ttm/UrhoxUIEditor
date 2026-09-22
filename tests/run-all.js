@@ -3,6 +3,9 @@
 require("./p0.test.js");
 require("./p0-editor.test.js");
 require("./config.test.js");
+require("./project-config.test.js");
+require("./project-config-cli.test.js");
+require("./project-acceptance-regression.test.js");
 require("./welcome.test.js");
 require("./interaction-regression.test.js");
 require("./hotkeys-regression.test.js");
