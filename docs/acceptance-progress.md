@@ -402,6 +402,31 @@
 剩余项目明确交接，不将整张清单标记为全部通过。
 已通过应用工具删除 `ui` 自动续跑，保留本地预览服务；不会继续无限扩展修改。
 
+## 续跑 9：组件实例与资源引用导航（2026-09-22）
+
+### 已修复
+
+- 组件实例选中后，Inspector 不再伪装成普通 Panel；现在显示“组件实例”、组件引用路径，
+  并提供“打开组件源文件”入口。
+- 组件源文件入口复用现有 UI 文件切换链路，保留未保存确认、串行打开和项目索引规则，
+  不直接绕过当前编辑会话。
+
+### 浏览器验收
+
+- 在校园项目 `case_file.ui.json` 选中 `top-bar`，Inspector 显示
+  `ui/components/top_bar.ui.json`。
+- 点击“打开组件源文件”后成功切换到
+  `/project/assets/ui/components/top_bar.ui.json`，组件预览正常。
+- 点击固定图片引用 `image/worldview_key_art_preview_01_opt.jpg` 后，底部切到
+  Assets 并高亮对应资源。
+- `case-photo` 的 `$caseCover` 被识别为运行时图片参数，没有错误导航到不存在的固定资源。
+
+### 自动化证据
+
+- `tests/interaction-regression.test.js` 覆盖组件实例识别和源文件导航回调。
+- `node tests/run-all.js` 全部通过；`git diff --check` 通过。
+- 浏览器本轮未观察到新增错误；真实游戏工程未写入。
+
 ## 后续验收顺序
 
 | 顺序 | 工作流 | 当前状态 | 必须验证的细节 |

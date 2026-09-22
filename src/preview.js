@@ -248,6 +248,12 @@
         },
         generated: app.selected && window.UrhoxDoc.isGenerated(previewNode(app.selected)),
         repeat: !!(app.selected && app.selected.$repeat),
+        componentRef: app.selected && (app.selected.component || app.selected._componentRef),
+        onOpenComponent: function (ref) {
+          if (window.UrhoxProject && window.UrhoxProject.openUiPath) {
+            window.UrhoxProject.openUiPath(ref);
+          }
+        },
       });
     }
   }

@@ -130,5 +130,20 @@ assert.equal(ui.history.undo(button).tree.hoverOpacity, undefined);
   opacity.fire("change");
   assert.equal(a.opacity, undefined);
 }
+{
+  const component = { type: "Panel", id: "top-bar", component: "ui/components/top_bar.ui.json" };
+  const container = new Element("div");
+  let opened = "";
+  UrhoxInspector.render(container, component, () => {}, {
+    componentRef: component.component,
+    onOpenComponent: ref => { opened = ref; },
+  });
+  const fields = flatten(container);
+  assert(fields.some(el => el.textContent === "组件实例"), "component instances must be identifiable in the inspector");
+  const openButton = fields.find(el => el.textContent === "打开组件源文件");
+  assert(openButton, "component instances need a source-file navigation action");
+  openButton.fire("click");
+  assert.equal(opened, component.component, "source navigation uses the referenced component path");
+}
 global.document = oldDocument;
 console.log("interaction-regression.test.js passed");

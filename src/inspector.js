@@ -605,6 +605,30 @@
     container.appendChild(list);
   }
 
+  function renderComponentNote(container, meta) {
+    if (!meta || !meta.componentRef) return;
+    var note = document.createElement("div");
+    note.className = "component-instance-note";
+    var title = document.createElement("strong");
+    title.textContent = "组件实例";
+    note.appendChild(title);
+    var ref = document.createElement("code");
+    ref.textContent = meta.componentRef;
+    note.appendChild(ref);
+    if (typeof meta.onOpenComponent === "function") {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "ghost";
+      button.textContent = "打开组件源文件";
+      button.title = "编辑这个组件会影响所有引用它的页面";
+      button.addEventListener("click", function () {
+        meta.onOpenComponent(meta.componentRef);
+      });
+      note.appendChild(button);
+    }
+    container.appendChild(note);
+  }
+
   function render(container, node, onChange, meta) {
     container.innerHTML = "";
     if (!node) {
@@ -616,6 +640,7 @@
       renderSelection(container, meta.selection, onChange, meta);
       return;
     }
+    renderComponentNote(container, meta);
     if (meta.generated) {
       var gen = document.createElement("p");
       gen.className = "muted insp-note";

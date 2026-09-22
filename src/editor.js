@@ -461,6 +461,24 @@
     }
   }
 
+  function openUiPath(ref) {
+    if (!ref) return false;
+    var normalized = String(ref).replace(/^\/+/, "");
+    var file = project.files.find(function (entry) {
+      var path = String(entry.path || "").replace(/^\/+/, "");
+      return path === normalized ||
+        path.endsWith("/" + normalized) ||
+        path.endsWith("/assets/" + normalized) ||
+        path === "assets/" + normalized;
+    });
+    if (!file) {
+      alert("找不到组件源文件：" + ref);
+      return false;
+    }
+    openUiFile(file);
+    return true;
+  }
+
   async function loadUiFile(file, targetProject) {
     targetProject = targetProject || project;
     var text;
@@ -923,6 +941,7 @@
     assignImageByRef: assignImageByRef,
     findAsset: findAsset,
     bindAssetThumb: bindAssetThumb,
+    openUiPath: openUiPath,
   };
 
   renderAll();
