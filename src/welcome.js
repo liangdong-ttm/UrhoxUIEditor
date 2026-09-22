@@ -9,6 +9,11 @@
   function showEditor() {
     screen.classList.add("hidden");
     editor.classList.remove("hidden");
+    var fit = function () {
+      if (window.UrhoxView && window.UrhoxView.fit) window.UrhoxView.fit();
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(fit);
+    else setTimeout(fit, 0);
   }
   function showWelcome() {
     screen.classList.remove("hidden");
