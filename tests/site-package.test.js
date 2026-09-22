@@ -28,6 +28,10 @@ try {
     assert.equal(report.errors, 0, JSON.stringify(report.diagnostics));
   }
   const html = fs.readFileSync(path.join(output, "index.html"), "utf8");
+  assert(html.includes("https://github.com/liangdong-ttm/UrhoxUIEditor\""),
+    "welcome page links to the repository home, not a generated archive");
+  assert(!html.includes("archive/refs/heads/main.zip"),
+    "welcome page does not label a repository archive as the main entry");
   for (const match of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
     if (/^(https?:|#)/.test(match[1])) continue;
     const asset = match[1].split("?", 1)[0];
