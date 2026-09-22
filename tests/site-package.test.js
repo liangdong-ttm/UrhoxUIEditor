@@ -30,8 +30,9 @@ try {
   const html = fs.readFileSync(path.join(output, "index.html"), "utf8");
   for (const match of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
     if (/^(https?:|#)/.test(match[1])) continue;
-    assert(!match[1].startsWith("/"), "site must support a GitHub project subpath");
-    assert(fs.existsSync(path.join(output, match[1])), match[1]);
+    const asset = match[1].split("?", 1)[0];
+    assert(!asset.startsWith("/"), "site must support a GitHub project subpath");
+    assert(fs.existsSync(path.join(output, asset)), asset);
   }
   const skill = path.join(output, "skills/lua-ui-to-json");
   for (const match of fs.readFileSync(path.join(skill, "SKILL.md"), "utf8").matchAll(/\]\(([^)]+)\)/g)) {
