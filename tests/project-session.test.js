@@ -37,6 +37,7 @@ class Element {
   removeAttribute(name) { delete this[name]; }
   showModal() { this.open = true; }
   close() { this.open = false; }
+  click() { this.clicked = (this.clicked || 0) + 1; }
 }
 
 function file(name, read) {
@@ -98,7 +99,7 @@ async function setup(options = {}) {
     UrhoxWelcome: welcome,
     UrhoxPreview: preview,
     UrhoxSave: {
-      capabilities: () => ({ directoryPicker: true }),
+      capabilities: () => ({ directoryPicker: options.directoryPicker !== false }),
       ensureWritable: async () => ({ ok: true }),
       write: (...args) => state.write(...args),
     },
@@ -125,6 +126,12 @@ async function setup(options = {}) {
 }
 
 module.exports = (async function () {
+  {
+    const { byId } = await setup({ manifest: { ui: [], assets: [] }, directoryPicker: false });
+    await byId("openProjectBtn").fire("click");
+    assert.equal(byId("folderInput").clicked, 1,
+      "unsupported directory picker falls back to the browser folder input");
+  }
   {
     const pending = deferred();
     const { api, state, welcome } = await setup({

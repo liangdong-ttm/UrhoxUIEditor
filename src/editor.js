@@ -630,6 +630,10 @@
     var caps = window.UrhoxSave && window.UrhoxSave.capabilities ? window.UrhoxSave.capabilities() : { directoryPicker: !!window.showDirectoryPicker };
     if (!caps.directoryPicker) {
       refreshPermissionUi();
+      if (folderInput && typeof folderInput.click === "function") {
+        folderInput.click();
+        return;
+      }
       alert("当前浏览器不能把修改写回本机项目。\n请使用 Chrome 或 Edge 打开本编辑器，再点「打开项目」。");
       return;
     }
