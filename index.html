@@ -14,10 +14,13 @@
           <strong class="app-title">Urhox UI Editor</strong>
           <button id="openProjectBtn" type="button">打开项目</button>
           <button id="saveBtn" type="button" class="ghost" disabled>保存</button>
+          <button id="checkUiBtn" type="button" class="ghost">检查 UI</button>
+          <button id="skillHelpBtn" type="button" class="ghost">AI Skill</button>
           <input id="folderInput" type="file" webkitdirectory multiple hidden />
           <span id="projectName" class="muted truncate">未打开项目 · 内置示例</span>
           <span id="permBadge" class="perm-badge">检查权限…</span>
           <span id="dirtyBadge" class="dirty-badge hidden">未保存</span>
+          <span id="sessionStatus" class="muted" role="status" aria-live="polite"></span>
         </div>
         <div class="menubar-right">
           <label class="device-label">屏幕
@@ -110,8 +113,8 @@
 
     <footer class="project-bar">
       <div class="bottom-tabs">
-        <button type="button" class="tab-btn active" data-tab="project">项目</button>
-        <button type="button" class="tab-btn" data-tab="ui">UI配置</button>
+        <button type="button" class="tab-btn active" data-tab="ui">UI 文档</button>
+        <button type="button" class="tab-btn" data-tab="project">Assets</button>
       </div>
       <div class="bottom-body">
         <div class="project-dirs">
@@ -123,6 +126,7 @@
           <div class="panel-title project-files-title">
             <span id="bottomListTitle">文件</span>
             <div class="view-toggle">
+              <button id="cancelReplaceBtn" type="button" class="ghost hidden">取消选图</button>
               <button id="viewListBtn" type="button" class="ghost active">列表</button>
               <button id="viewIconBtn" type="button" class="ghost">图标</button>
             </div>
@@ -133,59 +137,64 @@
     </footer>
   </div>
 
-  <div id="missingUiDialog" class="dialog-mask hidden">
+  <dialog id="missingUiDialog" class="dialog-mask" aria-labelledby="missingUiTitle">
     <div class="dialog">
-      <h3>这个项目还没有 UI 配置</h3>
-      <p class="muted">编辑器只加载 <code>assets/ui/*.ui.json</code>。界面如果还写在 Lua 里，需要先抽成配置文件。</p>
+      <h3 id="missingUiTitle">这个项目没有 .ui.json</h3>
+      <p id="missingUiDescription" class="muted">确认选择游戏项目根目录；如果 UI 仍写在 Lua 中，先交给 AI 转换。</p>
       <ol class="guide-list">
-        <li>在项目里让 AI 使用 skill <code>lua-ui-to-json</code></li>
-        <li>对「抽 UI / 转 ui.json / UI 数据化」发出请求</li>
-        <li>抽完后重新打开本项目</li>
+        <li><a href="https://github.com/liangdong-ttm/UrhoxUIEditor/tree/main/skills/lua-ui-to-json" target="_blank" rel="noopener noreferrer">查看公开转换 Skill 与检查脚本</a></li>
+        <li>复制下方指令给能访问游戏项目的 AI，导出后运行检查。</li>
+        <li>生成 <code>assets/ui/*.ui.json</code> 后，重新「打开项目」。</li>
       </ol>
+      <label for="skillPrompt">给 AI 的指令</label>
+      <textarea id="skillPrompt" class="report-text" readonly rows="7"></textarea>
+      <p id="skillCopyStatus" role="status" aria-live="polite" class="muted"></p>
       <div class="dialog-actions">
-        <button id="missingUiOk" type="button">知道了</button>
+        <button id="missingUiOk" type="button" class="ghost" autofocus>关闭</button>
+        <button id="copySkillPrompt" type="button" class="ghost active">复制给 AI</button>
       </div>
     </div>
-  </div>
+  </dialog>
 
-  <div id="deleteDialog" class="dialog-mask hidden">
+  <dialog id="uiCheckDialog" class="dialog-mask" aria-labelledby="uiCheckTitle">
     <div class="dialog">
-      <h3>删除节点</h3>
+      <h3 id="uiCheckTitle">UI 静态检查</h3>
+      <p id="uiCheckSummary"></p>
+      <p class="muted">检查声明、ID 与资源索引。未验证引擎效果、字体、图片解码、动态模板展开及 Lua 绑定。</p>
+      <div id="uiCheckList" class="diagnostic-list"></div>
+      <details><summary>AI 诊断报告</summary>
+        <textarea id="uiCheckOutput" class="report-text" readonly rows="7" aria-label="AI 诊断报告"></textarea>
+      </details>
+      <p id="checkCopyStatus" role="status" aria-live="polite" class="muted"></p>
+      <div class="dialog-actions">
+        <button id="closeCheckReport" type="button" class="ghost" autofocus>关闭</button>
+        <button id="copyCheckReport" type="button" class="ghost active">复制报告</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="deleteDialog" class="dialog-mask" aria-labelledby="deleteDialogTitle" aria-describedby="deleteDialogText">
+    <div class="dialog">
+      <h3 id="deleteDialogTitle">删除节点</h3>
       <p id="deleteDialogText" class="muted">确定删除该节点及其子节点吗？</p>
       <div class="dialog-actions">
-        <button id="deleteDialogCancel" type="button" class="ghost">取消</button>
+        <button id="deleteDialogCancel" type="button" class="ghost" autofocus>取消</button>
         <button id="deleteDialogOk" type="button" class="ghost danger">删除</button>
       </div>
     </div>
-  </div>
+  </dialog>
 
-  <div id="saveDialog" class="dialog-mask hidden">
+  <dialog id="saveDialog" class="dialog-mask" aria-labelledby="saveDialogTitle" aria-describedby="saveDialogPath">
     <div class="dialog">
-      <h3>要保存对当前 UI 的修改吗？</h3>
+      <h3 id="saveDialogTitle">要保存对当前 UI 的修改吗？</h3>
       <p id="saveDialogPath" class="muted"></p>
       <div class="dialog-actions">
-        <button id="saveDialogCancel" type="button" class="ghost">取消</button>
+        <button id="saveDialogCancel" type="button" class="ghost" autofocus>取消</button>
         <button id="saveDialogDiscard" type="button" class="ghost danger">不保存</button>
         <button id="saveDialogSave" type="button">保存</button>
       </div>
     </div>
-  </div>
+  </dialog>
 
-  <script src="src/config.js"></script>
-  <script src="src/yoga-lite.js"></script>
-  <script src="src/geom.js"></script>
-  <script src="src/history.js"></script>
-  <script src="src/doc.js"></script>
-  <script src="src/assets.js"></script>
-  <script src="src/tree.js"></script>
-  <script src="src/inspector.js"></script>
-  <script src="src/canvas.js"></script>
-  <script src="src/commands.js"></script>
-  <script src="src/layout.js"></script>
-  <script src="src/input.js"></script>
-  <script src="src/preview.js"></script>
-  <script src="src/save.js"></script>
-  <script src="src/hotkeys.js"></script>
-  <script src="src/editor.js"></script>
+  <script type="module" src="src/bootstrap.js"></script>
 </body>
 </html>

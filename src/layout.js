@@ -33,6 +33,12 @@
   function applyView() {
     if (!stageWrap) return;
     stageWrap.style.transform = "translate(" + panX + "px," + panY + "px) scale(" + zoom + ")";
+    var label = document.getElementById("artboardLabel");
+    if (label && canvas) {
+      label.style.transformOrigin = "left top";
+      label.style.transform = "scale(" + (1 / zoom) + ")";
+      label.style.top = (Number(canvas.dataset.originY || 0) - 22 / zoom) + "px";
+    }
     if (preview) {
       preview.style.setProperty("--grid-x", (panX % GRID) + "px");
       preview.style.setProperty("--grid-y", (panY % GRID) + "px");
@@ -95,6 +101,10 @@
   });
 
   window.addEventListener("keydown", function (event) {
+    if (event.defaultPrevented || event.isComposing || document.querySelector("dialog[open]")) return;
+    if (window.UrhoxProject && window.UrhoxProject.isOpening && window.UrhoxProject.isOpening()) return;
+    if (event.target && event.target.closest("button, [role=button]")) return;
+    if (event.target && (event.target.closest("input, textarea, select") || event.target.isContentEditable)) return;
     if (event.code === "Space" && !event.repeat) {
       spaceDown = true;
       if (preview) preview.classList.add("space");
@@ -106,6 +116,15 @@
       spaceDown = false;
       if (preview) preview.classList.remove("space");
     }
+  });
+  function stopPan() {
+    panning = false;
+    if (preview) preview.classList.remove("panning");
+  }
+  window.addEventListener("blur", function () {
+    spaceDown = false;
+    if (preview) preview.classList.remove("space");
+    stopPan();
   });
 
   if (preview) {
@@ -143,10 +162,9 @@
       lastY = event.clientY;
       applyView();
     });
-    preview.addEventListener("pointerup", function () {
-      panning = false;
-      preview.classList.remove("panning");
-    });
+    preview.addEventListener("pointerup", stopPan);
+    preview.addEventListener("pointercancel", stopPan);
+    preview.addEventListener("lostpointercapture", stopPan);
     preview.addEventListener("contextmenu", function (event) {
       event.preventDefault();
     });

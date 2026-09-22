@@ -26,7 +26,7 @@
       open: true,
       rows: [
         [{ key: "type", label: "组件", kind: "readonly" }, { key: "id", label: "名称", kind: "text" }],
-        [{ key: "visible", label: "启用", kind: "bool", fallback: true }],
+        [{ key: "visible", label: "启用", kind: "bool", fallback: true }, { key: "locked", label: "锁定", kind: "bool" }],
       ],
     },
     {
@@ -74,7 +74,7 @@
       open: true,
       rows: [
         [{ key: "position", label: "定位", kind: "enum", options: ["relative", "absolute"] }],
-        [{ key: "left", label: "Pos X", kind: "length" }, { key: "top", label: "Pos Y", kind: "length" }],
+        [{ key: "left", label: "相对父级 X", kind: "length" }, { key: "top", label: "相对父级 Y", kind: "length" }],
         [{ key: "width", label: "Width", kind: "length" }, { key: "height", label: "Height", kind: "length" }],
       ],
     },
@@ -88,6 +88,7 @@
       rows: [
         [{ key: "backgroundColor", label: "Color", kind: "color" }, { key: "opacity", label: "透明度", kind: "number" }],
         [{ key: "borderRadius", label: "圆角", kind: "number" }, { key: "borderWidth", label: "描边", kind: "number" }],
+        [{ key: "borderColor", label: "边色", kind: "color" }],
       ],
     },
     {
@@ -95,20 +96,10 @@
       title: "布局 (Flex)",
       open: false,
       showIf: function (node) {
-        return (node.children && node.children.length) || hasVal(node, "flexDirection") || hasVal(node, "gap") || hasVal(node, "justifyContent");
+        return (node.children && node.children.length) || hasVal(node, "flexDirection") || hasVal(node, "gap");
       },
       rows: [
-        [{ key: "flexDirection", label: "方向", kind: "enum", options: ["column", "row", "column-reverse", "row-reverse"] }, { key: "gap", label: "Gap", kind: "length" }],
-        [{ key: "justifyContent", label: "主轴", kind: "enum", options: ["flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly"] }, { key: "alignItems", label: "交叉轴", kind: "enum", options: ["stretch", "flex-start", "center", "flex-end", "baseline"] }],
-      ],
-    },
-    {
-      id: "spacing",
-      title: "边距",
-      open: false,
-      rows: [
-        [{ key: "paddingLeft", label: "Pad L", kind: "length" }, { key: "paddingTop", label: "Pad T", kind: "length" }, { key: "paddingRight", label: "Pad R", kind: "length" }, { key: "paddingBottom", label: "Pad B", kind: "length" }],
-        [{ key: "marginLeft", label: "Mar L", kind: "length" }, { key: "marginTop", label: "Mar T", kind: "length" }, { key: "marginRight", label: "Mar R", kind: "length" }, { key: "marginBottom", label: "Mar B", kind: "length" }],
+        [{ key: "flexDirection", label: "方向", kind: "enum", options: ["column", "row"] }, { key: "gap", label: "Gap", kind: "length" }],
       ],
     },
     {
@@ -129,15 +120,9 @@
       rows: [
         [{ key: "zIndex", label: "Z", kind: "number" }, { key: "pointerEvents", label: "Raycast", kind: "enum", options: ["auto", "none", "box-none", "box-only"] }],
         [{ key: "right", label: "Right", kind: "length" }, { key: "bottom", label: "Bottom", kind: "length" }],
-        [{ key: "minWidth", label: "MinW", kind: "length" }, { key: "minHeight", label: "MinH", kind: "length" }, { key: "maxWidth", label: "MaxW", kind: "length" }, { key: "maxHeight", label: "MaxH", kind: "length" }],
-        [{ key: "overflow", label: "Overflow", kind: "enum", options: ["visible", "hidden", "scroll"] }, { key: "aspectRatio", label: "宽高比", kind: "number" }],
-        [{ key: "alignSelf", label: "Align Self", kind: "enum", options: ["auto", "stretch", "flex-start", "center", "flex-end", "baseline"] }, { key: "flexWrap", label: "换行", kind: "enum", options: ["no-wrap", "wrap", "wrap-reverse"] }],
-        [{ key: "flexGrow", label: "Grow", kind: "number" }, { key: "flexShrink", label: "Shrink", kind: "number" }, { key: "flexBasis", label: "Basis", kind: "length" }],
-        [{ key: "scale", label: "Scale", kind: "number" }, { key: "rotate", label: "旋转", kind: "number" }],
-        [{ key: "translateX", label: "TX", kind: "number" }, { key: "translateY", label: "TY", kind: "number" }],
-        [{ key: "borderColor", label: "边色", kind: "color" }, { key: "shape", label: "形状", kind: "enum", options: ["rect", "circle"] }],
-        [{ key: "backgroundImageOpacity", label: "图透明", kind: "number" }],
-        [{ key: "fontFamily", label: "字体", kind: "text" }],
+        [{ key: "overflow", label: "Overflow", kind: "enum", options: ["visible", "hidden"] }],
+        [{ key: "borderColor", label: "边色", kind: "color" }],
+        [{ key: "locked", label: "锁定", kind: "bool" }],
       ],
     },
   ];
@@ -189,11 +174,46 @@
     else node[field.key] = value;
   }
 
+  function emitChange(onChange, extra) {
+    extra = extra || {};
+    if (typeof onChange === "function") onChange(extra);
+  }
+
   function bindControl(control, node, field, onChange) {
+    if (control.tagName === "INPUT" && control.type === "text") {
+      var old = node[field.key];
+      control.addEventListener("focus", function () {
+        old = node[field.key];
+        emitChange(onChange, { phase: "start" });
+      });
+      control.addEventListener("input", function () {
+        applyField(node, field, control.value);
+        emitChange(onChange, { live: true });
+      });
+      control.addEventListener("change", function () {
+        applyField(node, field, control.value);
+        emitChange(onChange, { phase: "end" });
+      });
+      control.addEventListener("blur", function () {
+        emitChange(onChange, { phase: "end", live: true });
+      });
+      control.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          node[field.key] = old;
+          control.value = formatValue(old);
+          emitChange(onChange, { live: true });
+        }
+      });
+      return;
+    }
     control.addEventListener("change", function () {
+      emitChange(onChange, { phase: "start" });
       var raw = control.type === "checkbox" ? control.checked : control.value;
       applyField(node, field, raw);
-      onChange();
+      if (field.key === "backgroundFit" && raw === "sliced" && !node.backgroundSlice) {
+        node.backgroundSlice = [40, 40, 40, 40];
+      }
+      emitChange(onChange, { phase: "end" });
     });
   }
 
@@ -207,7 +227,7 @@
     } else if (field.kind === "bool") {
       control = document.createElement("input");
       control.type = "checkbox";
-      control.checked = value !== false;
+      control.checked = value == null ? field.fallback === true : value === true;
     } else if (field.kind === "enum") {
       control = document.createElement("select");
       var empty = document.createElement("option");
@@ -226,13 +246,6 @@
         control.appendChild(option);
       });
       control.value = value == null ? "" : String(value);
-      if (field.key === "backgroundFit") {
-        control.addEventListener("change", function () {
-          if (control.value === "sliced" && !node.backgroundSlice) {
-            node.backgroundSlice = [40, 40, 40, 40];
-          }
-        });
-      }
     } else if (field.kind === "color") {
       return makeColorControl(node, field, onChange);
     } else if (field.kind === "slider") {
@@ -241,7 +254,7 @@
       control = document.createElement("input");
       control.type = "text";
       control.value = formatValue(value);
-      control.placeholder = field.kind === "length" ? "auto" : (field.kind === "number" ? "0~1" : "");
+      control.placeholder = field.kind === "length" ? "auto" : "";
     }
     bindControl(control, node, field, onChange);
     return control;
@@ -270,12 +283,29 @@
     var num = document.createElement("span");
     num.className = "slider-value";
     num.textContent = Number(slider.value).toFixed(2);
-    function commit() {
+    var editing = false;
+    function start() {
+      if (editing) return;
+      editing = true;
+      emitChange(onChange, { phase: "start" });
+    }
+    slider.addEventListener("pointerdown", start);
+    slider.addEventListener("input", function () {
+      start();
       node[field.key] = Number(slider.value);
       num.textContent = node[field.key].toFixed(2);
-      onChange();
-    }
-    slider.addEventListener("input", commit);
+      emitChange(onChange, { live: true });
+    });
+    slider.addEventListener("change", function () {
+      node[field.key] = Number(slider.value);
+      num.textContent = node[field.key].toFixed(2);
+      emitChange(onChange, { phase: "end" });
+      editing = false;
+    });
+    slider.addEventListener("blur", function () {
+      if (editing) emitChange(onChange, { phase: "end", live: true });
+      editing = false;
+    });
     wrap.appendChild(slider);
     wrap.appendChild(num);
     return wrap;
@@ -290,15 +320,35 @@
     var text = document.createElement("input");
     text.type = "text";
     text.value = formatValue(node[field.key]);
+    var editing = false;
+    function start() {
+      if (editing) return;
+      editing = true;
+      emitChange(onChange, { phase: "start" });
+    }
+    picker.addEventListener("pointerdown", start);
     picker.addEventListener("input", function () {
-      node[field.key] = picker.value.toUpperCase();
+      start();
+      var hex = picker.value.toUpperCase();
+      var prev = typeof node[field.key] === "string" ? node[field.key] : "";
+      var alpha = prev.length === 9 ? prev.slice(7) : "";
+      node[field.key] = hex + alpha;
       text.value = node[field.key];
-      onChange();
+      emitChange(onChange, { live: true });
+    });
+    picker.addEventListener("change", function () {
+      emitChange(onChange, { phase: "end" });
+      editing = false;
+    });
+    picker.addEventListener("blur", function () {
+      if (editing) emitChange(onChange, { phase: "end", live: true });
+      editing = false;
     });
     text.addEventListener("change", function () {
+      emitChange(onChange, { phase: "start" });
       applyField(node, field, text.value);
       picker.value = hex6(node[field.key]);
-      onChange();
+      emitChange(onChange, { phase: "end" });
     });
     wrap.appendChild(picker);
     wrap.appendChild(text);
@@ -340,7 +390,6 @@
       wrap.hidden = true;
       return wrap;
     }
-    if (!node.backgroundSlice) node.backgroundSlice = sliceArray(node);
     var hint = document.createElement("div");
     hint.className = "slice-hint";
     hint.textContent = "四角不拉伸 · 四边单向拉 · 中间双向拉";
@@ -356,13 +405,14 @@
       var input = document.createElement("input");
       input.type = "number";
       input.min = "0";
-      input.value = String(node.backgroundSlice[pair[1]] || 0);
+      input.value = String(sliceArray(node)[pair[1]] || 0);
       input.addEventListener("change", function () {
+        emitChange(onChange, { phase: "start" });
         var next = sliceArray(node);
         next[pair[1]] = Math.max(0, Number(input.value) || 0);
         node.backgroundSlice = next;
         node.backgroundFit = "sliced";
-        onChange();
+        emitChange(onChange, { phase: "end" });
       });
       cell.appendChild(name);
       cell.appendChild(input);
@@ -384,12 +434,18 @@
       if (path && window.UrhoxProject) window.UrhoxProject.revealAsset(path);
     });
     block.appendChild(pathEl);
-    if (path && window.UrhoxPreview && window.UrhoxPreview.assetUrl) {
+    if (path) {
       var img = document.createElement("img");
       img.className = "asset-thumb";
       img.alt = path;
       img.draggable = false;
-      img.src = window.UrhoxPreview.assetUrl(path);
+      if (window.UrhoxProject && window.UrhoxProject.bindAssetThumb) {
+        window.UrhoxProject.bindAssetThumb(img, path);
+      } else if (window.UrhoxPreview && window.UrhoxPreview.bindImage) {
+        window.UrhoxPreview.bindImage(img, path);
+      } else if (window.UrhoxAssets && window.UrhoxAssets.bindSrc) {
+        window.UrhoxAssets.bindSrc(img, path);
+      }
       block.appendChild(img);
     }
     var actions = document.createElement("div");
@@ -406,15 +462,16 @@
     clearBtn.className = "ghost";
     clearBtn.textContent = "清除";
     clearBtn.addEventListener("click", function () {
+      emitChange(onChange, { phase: "start" });
       delete node[field.key];
-      onChange();
+      emitChange(onChange, { phase: "end" });
     });
     actions.appendChild(pickBtn);
     actions.appendChild(clearBtn);
     block.appendChild(actions);
     var dropHint = document.createElement("div");
     dropHint.className = "slice-hint";
-    dropHint.textContent = "可从底部「项目」拖一张图到这里";
+    dropHint.textContent = "可从底部 Assets 拖一张图到这里";
     block.appendChild(dropHint);
     function takeRef(event) {
       var raw = event.dataTransfer && event.dataTransfer.getData("text/plain");
@@ -469,11 +526,107 @@
     return block;
   }
 
-  function render(container, node, onChange) {
+  function renderSelection(container, nodes, onChange, meta) {
+    var heading = document.createElement("p");
+    heading.className = "insp-note";
+    heading.textContent = "已选择 " + nodes.length + " 个节点";
+    container.appendChild(heading);
+    if (meta.blocked) {
+      var note = document.createElement("p");
+      note.className = "muted insp-note";
+      note.textContent = "包含锁定或模板生成节点，无法批量编辑";
+      container.appendChild(note);
+    }
+    var fields = [
+      { key: "visible", label: "启用", type: "checkbox", fallback: true },
+      { key: "opacity", label: "透明度", type: "number", fallback: 1 },
+    ];
+    if (nodes.every(isTextNode)) fields.push({ key: "text", label: "Text", type: "text", fallback: "" });
+    fields.forEach(function (field) {
+      var cell = document.createElement("label");
+      cell.className = "insp-cell";
+      var caption = document.createElement("span");
+      caption.className = "insp-key";
+      caption.textContent = field.label;
+      cell.appendChild(caption);
+      var input = document.createElement("input");
+      input.type = field.type;
+      input.disabled = !!meta.blocked;
+      var values = nodes.map(function (n) { return n[field.key] == null ? field.fallback : n[field.key]; });
+      var mixed = values.some(function (value) { return value !== values[0]; });
+      var initial = mixed ? "" : String(values[0]);
+      var cancelled = false;
+      if (field.type === "checkbox") {
+        input.checked = !mixed && values[0] === true;
+        input.indeterminate = mixed;
+      } else {
+        input.value = initial;
+        input.placeholder = mixed ? "混合" : "";
+        if (field.type === "number") { input.min = "0"; input.max = "1"; input.step = "any"; }
+      }
+      input.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && field.type !== "checkbox") {
+          input.value = initial;
+          cancelled = true;
+          input.setCustomValidity("");
+          event.preventDefault();
+        }
+      });
+      input.addEventListener("input", function () { cancelled = false; input.setCustomValidity(""); });
+      input.addEventListener("change", function () {
+        if (cancelled || meta.blocked || (meta.isCurrent && !meta.isCurrent())) return;
+        var value = field.type === "checkbox" ? input.checked : input.value;
+        if (field.type === "number") {
+          value = input.value.trim() === "" ? undefined : Number(input.value);
+          if (input.validity && input.validity.badInput ||
+              value !== undefined && (!Number.isFinite(value) || value < 0 || value > 1)) {
+            input.setCustomValidity("透明度必须为 0 到 1");
+            input.reportValidity();
+            return;
+          }
+        }
+        if (nodes.every(function (n) { return n[field.key] === value; })) return;
+        emitChange(onChange, { phase: "start" });
+        nodes.forEach(function (n) {
+          if (value === undefined) delete n[field.key];
+          else n[field.key] = value;
+        });
+        emitChange(onChange, { phase: "end" });
+      });
+      cell.appendChild(input);
+      var line = document.createElement("div");
+      line.className = "insp-line cols-1";
+      line.appendChild(cell);
+      container.appendChild(line);
+    });
+    var list = document.createElement("p");
+    list.className = "muted selection-names";
+    list.textContent = nodes.map(function (n) { return n.id || n.type; }).join("、");
+    container.appendChild(list);
+  }
+
+  function render(container, node, onChange, meta) {
     container.innerHTML = "";
     if (!node) {
       container.innerHTML = "<p class=\"muted\">选中一个节点后显示属性</p>";
       return;
+    }
+    meta = meta || {};
+    if (meta.selection && meta.selection.length > 1) {
+      renderSelection(container, meta.selection, onChange, meta);
+      return;
+    }
+    if (meta.generated) {
+      var gen = document.createElement("p");
+      gen.className = "muted insp-note";
+      gen.textContent = "此区域由模板生成，当前页面不可直接编辑实例。请打开对应模板文件。";
+      container.appendChild(gen);
+    }
+    if (meta.repeat) {
+      var rep = document.createElement("p");
+      rep.className = "muted insp-note";
+      rep.textContent = "动态列表容器：保存时会保留 $repeat，画布上的格子只是预览。";
+      container.appendChild(rep);
     }
     GROUPS.forEach(function (group) {
       if (group.showIf && !group.showIf(node)) return;

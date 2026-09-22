@@ -5,18 +5,23 @@
 
   var SNAP = 4;
 
-  function pickNodeAt(app, x, y) {
-    var hit = null;
-    window.UrhoxYoga.walk(app.tree, function (node) {
-      var box = node._layout;
-      if (!box || node._hidden || node === app.tree) return;
-      if (x >= box.x && y >= box.y && x <= box.x + box.w && y <= box.y + box.h) hit = node;
-    });
-    return hit;
+  function pickHits(app, x, y) {
+    return window.UrhoxDoc.pickAt(app.tree, x, y, { includeLocked: false, designMode: true }) || [];
+  }
+
+  function pickNodeAt(app, x, y, skip) {
+    var hits = pickHits(app, x, y);
+    if (skip && skip.length) {
+      hits = hits.filter(function (node) { return skip.indexOf(node) < 0; });
+    }
+    return hits[0] || null;
   }
 
   function hitHandle(app, x, y) {
     if (!app.selected || !app.selected._layout) return null;
+    if (app.selected.locked || root.UrhoxDoc.ancestors(app.sourceTree || app.tree, app.selected).some(function (p) {
+      return p.locked;
+    })) return null;
     var pad = root.UrhoxCanvas.handleSize(app);
     var list = root.UrhoxCanvas.handlesFor(app.selected._layout);
     for (var i = 0; i < list.length; i++) {
@@ -53,7 +58,10 @@
     var hits = [];
     window.UrhoxYoga.walk(app.tree, function (node) {
       if (!node._layout || node._hidden || node === app.tree) return;
-      if (window.UrhoxGeom.intersects(box, node._layout)) hits.push(node);
+      if (node.locked || root.UrhoxDoc.ancestors(app.tree, node).some(function (p) { return p.locked; })) return;
+      var b = node._layout;
+      if (b.w > 0 && b.h > 0 && b.x >= box.x && b.y >= box.y &&
+          b.x + b.w <= box.x + box.w && b.y + b.h <= box.y + box.h) hits.push(node);
     });
     return hits;
   }
@@ -63,7 +71,12 @@
     var xs = [0, src.width / 2, src.width];
     var ys = [0, src.height / 2, src.height];
     window.UrhoxYoga.walk(app.tree, function (node) {
-      if (!node._layout || node._hidden || node === except) return;
+      var source = app.sourceNode ? app.sourceNode(node) : node;
+      var selected = app.selectedNodes || [except];
+      if (!node._layout || node._hidden || selected.indexOf(source) >= 0 ||
+          root.UrhoxDoc.ancestors(app.sourceTree || app.tree, source).some(function (p) {
+            return selected.indexOf(p) >= 0;
+          })) return;
       var b = node._layout;
       xs.push(b.x, b.x + b.w / 2, b.x + b.w);
       ys.push(b.y, b.y + b.h / 2, b.y + b.h);
@@ -71,23 +84,36 @@
     return { xs: xs, ys: ys };
   }
 
-  function snapValue(value, lines, axis, out) {
-    var best = SNAP + 1;
-    var snapped = value;
-    for (var i = 0; i < lines.length; i++) {
-      var d = Math.abs(value - lines[i]);
-      if (d < best) { best = d; snapped = lines[i]; }
-    }
-    if (best <= SNAP) out.push({ axis: axis, pos: snapped });
-    return snapped;
+  function snapAxis(edges, lines, tolerance) {
+    var best = null;
+    edges.forEach(function (edge) {
+      lines.forEach(function (line) {
+        var delta = line - edge;
+        if (Math.abs(delta) <= tolerance && (!best || Math.abs(delta) < Math.abs(best.delta))) {
+          best = { delta: delta, pos: line };
+        }
+      });
+    });
+    return best;
   }
 
   function beginMoveOrResize(app, node, mode, p, event) {
+    var source = app.sourceNode ? app.sourceNode(node) : node;
+    if (!source || source.locked || root.UrhoxDoc.ancestors(app.sourceTree || app.tree, source).some(function (p) {
+      return p.locked;
+    })) return;
+    if (window.UrhoxDoc.isGenerated(node) && source && source.$repeat) {
+      app.selectNode(source, false);
+      return;
+    }
     var box = node._layout;
     if (!box) return;
-    app.pushHistory();
+    if (app.beginHistory) app.beginHistory();
+    else app.pushHistory();
     app.drag = {
-      node: node,
+      pointerId: event.pointerId,
+      selectionIds: (app.selectedNodes || []).map(root.UrhoxDoc.getEditorId),
+      node: source,
       mode: mode,
       startX: p.x,
       startY: p.y,
@@ -95,7 +121,12 @@
       origY: box.y,
       origW: box.w,
       origH: box.h,
-      origs: (app.selectedNodes || []).filter(function (n) { return n && n._layout; }).map(function (n) {
+      origs: (app.selectedNodes || []).filter(function (n) {
+        return n && n !== (app.sourceTree || app.tree) && n._layout && !n.locked &&
+          !root.UrhoxDoc.isGenerated(n) && !root.UrhoxDoc.ancestors(app.sourceTree || app.tree, n).some(function (p) {
+          return p.locked || (app.selectedNodes || []).indexOf(p) >= 0;
+        });
+      }).map(function (n) {
         return { node: n, x: n._layout.x, y: n._layout.y, w: n._layout.w, h: n._layout.h };
       }),
       duplicate: event.altKey && mode === "move",
@@ -104,13 +135,13 @@
       var copies = [];
       app.drag.origs.forEach(function (item) {
         var copy = root.UrhoxDoc.cloneForPaste(item.node);
-        var parent = root.UrhoxDoc.parentOf(app.tree, item.node) || app.tree;
+        var parent = root.UrhoxDoc.parentOf(app.sourceTree || app.tree, item.node) || app.sourceTree || app.tree;
         parent.children = parent.children || [];
         parent.children.push(copy);
         copies.push(copy);
       });
       app.ensureKeys();
-      app.layout();
+      app.rebuildPreview();
       app.setSelection(copies);
       app.drag.node = app.selected;
       app.drag.origs = (app.selectedNodes || []).filter(function (n) { return n && n._layout; }).map(function (n) {
@@ -129,6 +160,14 @@
   function bind(app) {
     var canvas = app.canvas;
     var previewEl = document.getElementById("preview");
+    function beginMarquee(event) {
+      var p = canvasPoint(app, event);
+      var seed = (app.selectedNodes || []).slice();
+      if (!event.shiftKey) app.enterPickMode();
+      app.drag = { mode: "marquee", pointerId: event.pointerId, startX: p.x, startY: p.y, additive: event.shiftKey, seed: seed };
+      canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    }
 
     canvas.addEventListener("pointermove", function (event) {
       if (!app.tree || app.drag) return;
@@ -136,11 +175,6 @@
       var p = canvasPoint(app, event);
       var handle = hitHandle(app, p.x, p.y);
       if (handle) { setCursor(app, handle.cursor); return; }
-      if (app.lockedFromTree && app.selected) {
-        setCursor(app, "moving");
-        app.hover = app.selected;
-        return;
-      }
       var hit = pickNodeAt(app, p.x, p.y);
       app.spacingTarget = event.altKey && app.selected && hit && hit !== app.selected ? hit : null;
       setCursor(app, hit && app.isSelected(hit) ? "moving" : "");
@@ -161,7 +195,7 @@
           if (window.UrhoxPreview && window.UrhoxPreview.setCreateKind) window.UrhoxPreview.setCreateKind(null);
           return;
         }
-        app.enterPickMode();
+        if (app.tree) beginMarquee(event);
       });
       function onImageDragOver(event) {
         event.preventDefault();
@@ -171,6 +205,7 @@
         var raw = event.dataTransfer && event.dataTransfer.getData("text/plain");
         if (!raw || raw.indexOf("urhox-image:") !== 0) return;
         event.preventDefault();
+        event.stopPropagation();
         var p = canvasPoint(app, event);
         window.UrhoxCommands.createImageFromAsset(app, raw.slice("urhox-image:".length), Math.round(p.x), Math.round(p.y));
       }
@@ -213,16 +248,17 @@
       }
       var hit = pickNodeAt(app, p.x, p.y);
       if (!hit) {
-        app.enterPickMode();
+        beginMarquee(event);
         return;
       }
-      if (app.lockedFromTree && app.selected && !event.shiftKey) {
-        beginMoveOrResize(app, app.selected, "move", p, event);
-        canvas.setPointerCapture(event.pointerId);
+      if (hit.locked) {
+        app.selectNode(app.sourceNode ? app.sourceNode(hit) : hit, true);
         return;
       }
-      if (hit.locked) return;
-      if (event.shiftKey) app.selectNode(hit, false, true);
+      if (event.shiftKey) {
+        app.selectNode(hit, false, true);
+        if (!app.isSelected(hit)) return;
+      }
       else if (!app.isSelected(hit)) app.selectNode(hit, false);
       beginMoveOrResize(app, hit, "move", p, event);
       canvas.setPointerCapture(event.pointerId);
@@ -242,15 +278,17 @@
         return;
       }
       var mode = app.drag.mode;
+      var lockX = false, lockY = false;
       if (event.shiftKey && mode === "move") {
-        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
-        else dx = 0;
+        if (Math.abs(dx) > Math.abs(dy)) { dy = 0; lockY = true; }
+        else { dx = 0; lockX = true; }
       }
       var worldX = app.drag.origX + (mode === "move" ? dx : 0);
       var worldY = app.drag.origY + (mode === "move" ? dy : 0);
       if (mode === "move") {
         (app.drag.origs || []).forEach(function (item) {
-          root.UrhoxDoc.applyWorldRect(app.tree, item.node, item.x + dx, item.y + dy, item.w, item.h);
+          var src = app.sourceNode ? app.sourceNode(item.node) : item.node;
+          root.UrhoxDoc.moveWorldRect(app.sourceTree || app.tree, src, item.x + dx, item.y + dy);
         });
       } else {
         var next = window.UrhoxGeom.resizeRect(
@@ -259,46 +297,65 @@
         );
         worldX = next.x;
         worldY = next.y;
-        root.UrhoxDoc.applyWorldRect(app.tree, app.drag.node, next.x, next.y, next.w, next.h);
+        var srcNode = app.sourceNode ? app.sourceNode(app.drag.node) : app.drag.node;
+        root.UrhoxDoc.applyWorldRect(app.sourceTree || app.tree, srcNode, next.x, next.y, next.w, next.h);
       }
       app.guides = [];
       var lines = collectSnapLines(app, app.drag.node);
       if (mode === "move") {
         var lead = (app.drag.origs && app.drag.origs[0]) || { x: app.drag.origX, y: app.drag.origY, w: app.drag.origW, h: app.drag.origH };
         var x = lead.x + dx, y = lead.y + dy, w = lead.w, h = lead.h;
-        var nx = snapValue(x, lines.xs, "x", app.guides);
-        var ny = snapValue(y, lines.ys, "y", app.guides);
-        var nxc = snapValue(x + w / 2, lines.xs, "x", app.guides);
-        var nyc = snapValue(y + h / 2, lines.ys, "y", app.guides);
-        var nr = snapValue(x + w, lines.xs, "x", app.guides);
-        var nb = snapValue(y + h, lines.ys, "y", app.guides);
-        var sx = 0, sy = 0;
-        if (Math.abs(nx - x) <= SNAP) sx = nx - x;
-        else if (Math.abs(nxc - (x + w / 2)) <= SNAP) sx = nxc - (x + w / 2);
-        else if (Math.abs(nr - (x + w)) <= SNAP) sx = nr - (x + w);
-        if (Math.abs(ny - y) <= SNAP) sy = ny - y;
-        else if (Math.abs(nyc - (y + h / 2)) <= SNAP) sy = nyc - (y + h / 2);
-        else if (Math.abs(nb - (y + h)) <= SNAP) sy = nb - (y + h);
+        var rect = canvas.getBoundingClientRect();
+        var tolerance = SNAP * canvas.width / rect.width / app.contentTransform().scale;
+        var snapX = lockX ? null : snapAxis([x, x + w / 2, x + w], lines.xs, tolerance);
+        var snapY = lockY ? null : snapAxis([y, y + h / 2, y + h], lines.ys, tolerance);
+        var sx = snapX ? snapX.delta : 0, sy = snapY ? snapY.delta : 0;
+        if (snapX) app.guides.push({ axis: "x", pos: snapX.pos });
+        if (snapY) app.guides.push({ axis: "y", pos: snapY.pos });
         if (sx || sy) {
           (app.drag.origs || []).forEach(function (item) {
-            root.UrhoxDoc.applyWorldRect(app.tree, item.node, item.x + dx + sx, item.y + dy + sy, item.w, item.h);
+            var src = app.sourceNode ? app.sourceNode(item.node) : item.node;
+            root.UrhoxDoc.moveWorldRect(app.sourceTree || app.tree, src, item.x + dx + sx, item.y + dy + sy);
           });
         }
       }
+      if (app.rebuildPreview) app.rebuildPreview();
       app.draw();
     });
 
-    canvas.addEventListener("pointerup", function () {
+    function finishDrag(event, cancel) {
       if (!app.drag) return;
+      var drag = app.drag;
+      if (event && event.pointerId != null && event.pointerId !== drag.pointerId) return;
+      var marquee = drag.mode === "marquee";
       app.drag = null;
       app.marquee = null;
       app.guides = [];
-      if (app.layout) app.layout();
+      if (cancel) {
+        if (marquee) app.setSelection(drag.seed);
+        else if (app.cancelHistory) app.cancelHistory(drag.selectionIds);
+      } else if (!marquee && app.commitHistory) app.commitHistory();
+      if (canvas.hasPointerCapture && canvas.hasPointerCapture(drag.pointerId)) {
+        canvas.releasePointerCapture(drag.pointerId);
+      }
+      setCursor(app, "");
+      if (app.rebuildPreview) app.rebuildPreview();
+      else if (app.layout) app.layout();
       app.draw();
       app.refreshInspector();
       app.updateMeta();
-    });
+    }
+    canvas.addEventListener("pointerup", function (event) { finishDrag(event, false); });
+    canvas.addEventListener("pointercancel", function (event) { finishDrag(event, true); });
+    canvas.addEventListener("lostpointercapture", function (event) { finishDrag(event, true); });
+    window.addEventListener("blur", function () { finishDrag(null, true); });
+    window.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape" || !app.drag) return;
+      event.preventDefault();
+      event.stopPropagation();
+      finishDrag(null, true);
+    }, true);
   }
 
-  root.UrhoxInput = { bind: bind };
+  root.UrhoxInput = { bind: bind, snapAxis: snapAxis };
 })(window);

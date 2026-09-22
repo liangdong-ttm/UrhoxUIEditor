@@ -16,4 +16,9 @@
       "2k-land": { id: "2k-land", name: "2K 横屏", width: 2560, height: 1440, bezel: 32 },
     },
   };
+  if (new URLSearchParams(location.search).get("project") === "local") {
+    root.UrhoxConfig.MANIFEST = "/api/project";
+    root.UrhoxConfig.DEFAULT_ASSET_ROOT = "/project/assets/";
+    root.UrhoxConfig.LOCAL_PREVIEW = true;
+  }
 })(window);

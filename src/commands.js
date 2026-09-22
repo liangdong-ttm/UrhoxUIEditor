@@ -11,11 +11,16 @@
     return Doc().cloneForPaste(node);
   }
 
+  function sourceRoot(app) {
+    return app.sourceTree || app.tree;
+  }
+
   function parentOf(app, node) {
-    return Doc().parentOf(app.tree, node);
+    return Doc().parentOf(sourceRoot(app), node);
   }
 
   function afterChange(app, selected) {
+    if (app.rebuildPreview) app.rebuildPreview();
     app.ensureKeys();
     app.layout();
     if (selected !== undefined) {
@@ -26,60 +31,172 @@
     app.refresh();
   }
 
+  function worldRect(app, node) {
+    return Doc().getWorldRect(app.tree, node);
+  }
+
+  function commandNodes(app, explicit, destructive) {
+    var tree = sourceRoot(app);
+    var selected = explicit || app.selectedNodes || (app.selected ? [app.selected] : []);
+    if (!tree || !selected.length || selected.some(function (node) {
+      return !node || node === tree || !parentOf(app, node) || Doc().isGenerated(node) ||
+        node.locked || Doc().ancestors(tree, node).some(function (p) { return p.locked; });
+    })) return [];
+    var nodes = [];
+    Doc().walk(tree, function (node) {
+      if (selected.indexOf(node) >= 0 && !Doc().ancestors(tree, node).some(function (p) {
+        return selected.indexOf(p) >= 0;
+      })) nodes.push(node);
+    });
+    if (destructive) {
+      var locked = false;
+      nodes.forEach(function (node) {
+        Doc().walk(node, function (child) { if (child.locked) locked = true; });
+      });
+      if (locked) return [];
+    }
+    return nodes;
+  }
+
+  function copiesFor(app, nodes) {
+    var used = new Set();
+    Doc().walk(sourceRoot(app), function (node) { if (node.id) used.add(node.id); });
+    return nodes.map(function (node) {
+      var copy = cloneForPaste(node);
+      Doc().walk(copy, function (child) {
+        if (!child.id) return;
+        var base = child.id, suffix = 2;
+        while (used.has(child.id)) child.id = base + "_" + suffix++;
+        used.add(child.id);
+      });
+      return copy;
+    });
+  }
+
+  function offsetCopies(app, copies) {
+    if (app.rebuildPreview) app.rebuildPreview();
+    app.layout();
+    copies.forEach(function (copy) {
+      if (copy.position !== "absolute") return;
+      var box = worldRect(app, copy);
+      Doc().moveWorldRect(sourceRoot(app), copy, box.x + 16, box.y + 16);
+    });
+  }
+
+  function groupTargets(app) {
+    var nodes = commandNodes(app, null, true);
+    if (!nodes.length) return [];
+    var parent = parentOf(app, nodes[0]);
+    return nodes.every(function (node) {
+      return parentOf(app, node) === parent && node.position === "absolute";
+    }) ? nodes : [];
+  }
+
+  function ungroupTarget(app) {
+    var selected = app.selectedNodes || (app.selected ? [app.selected] : []);
+    if (selected.length !== 1) return null;
+    var nodes = commandNodes(app, selected, true);
+    var node = nodes[0];
+    return node && node.position === "absolute" && node.children && node.children.length && node.children.every(function (child) {
+      return child.position === "absolute" && !Doc().isGenerated(child);
+    }) ? node : null;
+  }
+
+  function placeWorldRects(app, nodes, worlds) {
+    nodes.forEach(function (node, i) { Doc().setWorldRect(sourceRoot(app), node, worlds[i]); });
+    if (app.rebuildPreview) app.rebuildPreview();
+    app.layout();
+    // Measured positions include borders and margins; correct those origins after reparenting.
+    nodes.forEach(function (node, i) {
+      Doc().moveWorldRect(sourceRoot(app), node, worlds[i].x, worlds[i].y);
+    });
+  }
+
+  function canReparent(app, node, newParent) {
+    var tree = sourceRoot(app);
+    if (!node || !newParent || node === tree || node === newParent) return false;
+    if (!parentOf(app, node) || (newParent !== tree && !parentOf(app, newParent))) return false;
+    if (Doc().isGenerated(node) || Doc().isGenerated(newParent)) return false;
+    if ([node, newParent].some(function (n) {
+      return n.locked || Doc().ancestors(tree, n).some(function (p) { return p.locked; });
+    })) return false;
+    return Doc().ancestors(tree, newParent).indexOf(node) < 0;
+  }
+
   root.UrhoxCommands = {
+    canReparent: canReparent,
+    deleteTargets: function (app, nodes) { return commandNodes(app, nodes, true); },
+    canGroup: function (app) { return groupTargets(app).length > 0; },
+    canUngroup: function (app) { return !!ungroupTarget(app); },
     nudge: function (app, dx, dy) {
-      var node = app.selected;
-      if (!node || node === app.tree || !node._layout) return;
+      var nodes = (app.selectedNodes || [app.selected]).filter(function (node) {
+        return node && node !== sourceRoot(app) && !node.locked && !Doc().isGenerated(node) &&
+          !Doc().ancestors(sourceRoot(app), node).some(function (p) {
+            return p.locked || (app.selectedNodes || []).indexOf(p) >= 0;
+          });
+      });
+      if (!nodes.length) return;
       app.pushHistory();
-      Doc().applyWorldRect(app.tree, node, node._layout.x + dx, node._layout.y + dy, node._layout.w, node._layout.h);
+      nodes.forEach(function (node) {
+        var box = worldRect(app, node);
+        Doc().moveWorldRect(sourceRoot(app), node, box.x + dx, box.y + dy);
+      });
       afterChange(app);
     },
 
     duplicate: function (app) {
-      var node = app.selected;
-      if (!node || node === app.tree) return;
+      var nodes = commandNodes(app);
+      if (!nodes.length) return;
+      var copies = copiesFor(app, nodes);
       app.pushHistory();
-      var copy = cloneForPaste(node);
-      var parent = parentOf(app, node) || app.tree;
-      parent.children = parent.children || [];
-      parent.children.push(copy);
-      if (copy.left != null) copy.left = (Number(copy.left) || 0) + 16;
-      if (copy.top != null) copy.top = (Number(copy.top) || 0) + 16;
-      afterChange(app, copy);
+      nodes.forEach(function (node, i) {
+        var parent = parentOf(app, node);
+        parent.children.splice(parent.children.indexOf(node) + 1, 0, copies[i]);
+      });
+      offsetCopies(app, copies);
+      afterChange(app, copies);
     },
 
-    remove: function (app) {
-      var node = app.selected;
-      if (!node || node === app.tree) return;
-      var parent = parentOf(app, node);
-      if (!parent || !parent.children) return;
+    remove: function (app, explicit) {
+      var nodes = commandNodes(app, explicit, true);
+      if (!nodes.length) return false;
+      var parents = nodes.map(function (node) { return parentOf(app, node); });
       app.pushHistory();
-      parent.children = parent.children.filter(function (child) { return child !== node; });
-      afterChange(app, parent === app.tree ? null : parent);
-      app.lockedFromTree = false;
+      nodes.forEach(function (node, i) {
+        parents[i].children = parents[i].children.filter(function (child) { return child !== node; });
+      });
+      var parent = parents.every(function (p) { return p === parents[0]; }) ? parents[0] : null;
+      afterChange(app, parent === sourceRoot(app) ? null : parent);
+      return true;
     },
 
     copy: function (app) {
-      var node = app.selected;
-      if (!node || node === app.tree) return;
-      app.clipboard = root.UrhoxHistory.cloneNode(node);
+      var nodes = commandNodes(app);
+      if (!nodes.length) return;
+      app.clipboard = nodes.map(function (node) { return root.UrhoxHistory.cloneNode(node); });
     },
 
     cut: function (app) {
-      this.copy(app);
-      this.remove(app);
+      var nodes = commandNodes(app, null, true);
+      if (!nodes.length) return;
+      var clipboard = nodes.map(function (node) { return root.UrhoxHistory.cloneNode(node); });
+      if (this.remove(app, nodes)) app.clipboard = clipboard;
     },
 
     paste: function (app) {
-      if (!app.clipboard || !app.tree) return;
+      if (!app.clipboard || !sourceRoot(app)) return;
+      var parent = app.selected || sourceRoot(app);
+      if (Doc().isGenerated(parent) || parent.locked ||
+        (parent !== sourceRoot(app) && !parentOf(app, parent)) ||
+        Doc().ancestors(sourceRoot(app), parent).some(function (p) { return p.locked; })) return;
+      var nodes = Array.isArray(app.clipboard) ? app.clipboard : [app.clipboard];
+      if (!nodes.length) return;
+      var copies = copiesFor(app, nodes);
       app.pushHistory();
-      var copy = cloneForPaste(app.clipboard);
-      var parent = app.selected && app.selected !== app.tree ? app.selected : app.tree;
       parent.children = parent.children || [];
-      parent.children.push(copy);
-      if (copy.left != null) copy.left = (Number(copy.left) || 0) + 16;
-      if (copy.top != null) copy.top = (Number(copy.top) || 0) + 16;
-      afterChange(app, copy);
+      copies.forEach(function (copy) { parent.children.push(copy); });
+      offsetCopies(app, copies);
+      afterChange(app, copies);
     },
 
     setVisible: function (app, node, visible) {
@@ -98,7 +215,7 @@
       if (!app.selected) return;
       app.pushHistory();
       app.selected.locked = !app.selected.locked;
-      app.refreshInspector();
+      afterChange(app);
     },
 
     rename: function (app) {
@@ -111,48 +228,51 @@
     },
 
     align: function (app, mode) {
-      var nodes = app.selectedNodes || [];
+      var nodes = (app.selectedNodes || []).filter(function (n) { return n && !Doc().isGenerated(n); });
       if (nodes.length < 2) return;
       app.pushHistory();
-      var rects = window.UrhoxGeom.alignRects(nodes.map(function (n) { return n._layout; }), mode);
+      var rects = window.UrhoxGeom.alignRects(nodes.map(function (n) { return worldRect(app, n); }), mode);
       nodes.forEach(function (node, i) {
-        if (node && rects[i]) Doc().applyWorldRect(app.tree, node, rects[i].x, rects[i].y, rects[i].w, rects[i].h);
+        if (node && rects[i]) Doc().setWorldRect(sourceRoot(app), node, rects[i]);
       });
       afterChange(app);
     },
 
     distribute: function (app, axis) {
-      var nodes = app.selectedNodes || [];
+      var nodes = (app.selectedNodes || []).filter(function (n) { return n && !Doc().isGenerated(n); });
       if (nodes.length < 3) return;
       app.pushHistory();
-      var rects = window.UrhoxGeom.distributeRects(nodes.map(function (n) { return n._layout; }), axis);
+      var rects = window.UrhoxGeom.distributeRects(nodes.map(function (n) { return worldRect(app, n); }), axis);
       nodes.forEach(function (node, i) {
-        if (node && rects[i]) Doc().applyWorldRect(app.tree, node, rects[i].x, rects[i].y, rects[i].w, rects[i].h);
+        if (node && rects[i]) Doc().setWorldRect(sourceRoot(app), node, rects[i]);
       });
       afterChange(app);
     },
 
-    reparent: function (app, node, newParent) {
-      if (!node || !newParent || node === newParent) return;
-      var cur = newParent;
-      while (cur) {
-        if (cur === node) return;
-        cur = parentOf(app, cur);
-      }
+    reparent: function (app, node, newParent, index) {
+      if (!canReparent(app, node, newParent)) return false;
       var oldParent = parentOf(app, node);
-      if (!oldParent || oldParent === newParent) return;
-      var worldX = node._layout ? node._layout.x : Number(node.left) || 0;
-      var worldY = node._layout ? node._layout.y : Number(node.top) || 0;
-      var worldW = node._layout ? node._layout.w : node.width;
-      var worldH = node._layout ? node._layout.h : node.height;
+      var sameParent = oldParent === newParent;
+      if (sameParent && index == null) return false;
+      var oldIndex = oldParent.children.indexOf(node);
+      var next = index == null ? (newParent.children || []).length : index;
+      if (sameParent && oldIndex < next) next -= 1;
+      next = Math.max(0, Math.min((newParent.children || []).length - (sameParent ? 1 : 0), next));
+      if (sameParent && next === oldIndex) return false;
+      var world = worldRect(app, node);
       app.pushHistory();
       oldParent.children = (oldParent.children || []).filter(function (c) { return c !== node; });
       newParent.children = newParent.children || [];
-      newParent.children.push(node);
-      var origin = newParent._layout || { x: 0, y: 0 };
-      Doc().applyRect(node, worldX - origin.x, worldY - origin.y, worldW, worldH);
+      newParent.children.splice(next, 0, node);
+      if (!sameParent && node.position === "absolute") {
+        Doc().setWorldRect(sourceRoot(app), node, world);
+        if (app.rebuildPreview) app.rebuildPreview();
+        app.layout();
+        // Correct the new containing block's border origin using measured bounds.
+        Doc().moveWorldRect(sourceRoot(app), node, world.x, world.y);
+      }
       afterChange(app, node);
-      app.lockedFromTree = true;
+      return true;
     },
 
     moveLayer: function (app, delta, extreme) {
@@ -172,52 +292,57 @@
     },
 
     group: function (app) {
-      var nodes = app.selectedNodes || [];
-      if (nodes.length < 1) return;
-      var first = nodes[0];
-      var parent = parentOf(app, first) || app.tree;
-      if (!nodes.every(function (n) { return parentOf(app, n) === parent; })) return;
-      var b = window.UrhoxGeom.boundsOf(nodes.map(function (n) { return n._layout; }));
+      var nodes = groupTargets(app);
+      if (!nodes.length) return;
+      var parent = parentOf(app, nodes[0]);
+      var index = parent.children.indexOf(nodes[0]);
+      var worlds = nodes.map(function (n) { return worldRect(app, n); });
+      var b = window.UrhoxGeom.boundsOf(worlds);
       if (!b) return;
       app.pushHistory();
       var group = {
         type: "Panel",
         id: "group",
         position: "absolute",
-        left: b.x,
-        top: b.y,
         width: b.w,
         height: b.h,
         backgroundColor: false,
         children: [],
       };
+      var names = new Set();
+      Doc().walk(sourceRoot(app), function (node) { if (node.id) names.add(node.id); });
+      var suffix = 2;
+      while (names.has(group.id)) group.id = "group_" + suffix++;
+      if (nodes.every(function (node) { return node.zIndex === nodes[0].zIndex; }) &&
+        nodes[0].zIndex != null) group.zIndex = nodes[0].zIndex;
+      Doc().ensureEditorIds(group);
       nodes.forEach(function (n) {
         parent.children = (parent.children || []).filter(function (c) { return c !== n; });
-        n.left = n._layout.x - b.x;
-        n.top = n._layout.y - b.y;
         group.children.push(n);
       });
       parent.children = parent.children || [];
-      parent.children.push(group);
+      parent.children.splice(index, 0, group);
+      if (app.rebuildPreview) app.rebuildPreview();
+      app.layout();
+      placeWorldRects(app, [group], [b]);
+      if (app.rebuildPreview) app.rebuildPreview();
+      app.layout();
+      placeWorldRects(app, nodes, worlds);
       afterChange(app, group);
-      app.lockedFromTree = true;
     },
 
     ungroup: function (app) {
-      var node = app.selected;
-      if (!node || !node.children || !node.children.length) return;
+      var node = ungroupTarget(app);
+      if (!node) return;
       var parent = parentOf(app, node);
       if (!parent) return;
       app.pushHistory();
-      var box = node._layout || { x: 0, y: 0 };
       var kids = node.children.slice();
-      parent.children = (parent.children || []).filter(function (c) { return c !== node; });
-      kids.forEach(function (kid) {
-        kid.left = (Number(kid.left) || 0) + box.x;
-        kid.top = (Number(kid.top) || 0) + box.y;
-        kid.position = kid.position || "absolute";
-        parent.children.push(kid);
-      });
+      var worlds = kids.map(function (kid) { return worldRect(app, kid); });
+      parent.children.splice.apply(parent.children, [parent.children.indexOf(node), 1].concat(kids));
+      if (app.rebuildPreview) app.rebuildPreview();
+      app.layout();
+      placeWorldRects(app, kids, worlds);
       afterChange(app, kids);
     },
 
@@ -233,9 +358,10 @@
     },
 
     createNode: function (app, kind, x, y, parent) {
-      if (!app.tree) return null;
-      parent = parent || app.selected || app.tree;
-      if (parent.type === "Label") parent = parentOf(app, parent) || app.tree;
+      if (!sourceRoot(app)) return null;
+      parent = parent || app.selected || sourceRoot(app);
+      if (Doc().isGenerated(parent)) parent = sourceRoot(app);
+      if (parent.type === "Label") parent = parentOf(app, parent) || sourceRoot(app);
       var box = parent._layout || { x: 0, y: 0, w: 200, h: 80 };
       if (x == null) x = box.x + 16;
       if (y == null) y = box.y + 16;
@@ -267,17 +393,19 @@
       } else {
         node = { type: "Panel", id: "panel", position: "absolute", left: 0, top: 0, width: 240, height: 160, backgroundColor: "#FFFFFFCC", borderRadius: 16 };
       }
-      node.left = Math.round(x - (parent._layout ? parent._layout.x : 0));
-      node.top = Math.round(y - (parent._layout ? parent._layout.y : 0));
+      Doc().ensureEditorIds(node);
       app.pushHistory();
       parent.children = parent.children || [];
       parent.children.push(node);
+      if (app.rebuildPreview) app.rebuildPreview();
+      app.layout();
+      Doc().setWorldRect(sourceRoot(app), node, { x: x, y: y, w: node.width, h: node.height });
       afterChange(app, node);
       return node;
     },
 
     createImageFromAsset: function (app, ref, x, y) {
-      var parent = app.tree;
+      var parent = sourceRoot(app);
       var node = this.createNode(app, "Image", x, y, parent);
       if (!node) return null;
       node.backgroundImage = ref;

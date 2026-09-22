@@ -25,6 +25,7 @@
   var collapsedDirs = {};
   var bottomTab = "ui";
   var assets = [];
+  var resourceIndexReady = false;
   var selectedAsset = "";
   var replaceTarget = null;
   var metaFiles = {};
@@ -34,6 +35,8 @@
   var dirtyBadge = document.getElementById("dirtyBadge");
   var permBadge = document.getElementById("permBadge");
   var writeReady = false;
+  var saving = null;
+  var opening = false;
   var saveDialog = document.getElementById("saveDialog");
   var saveDialogPath = document.getElementById("saveDialogPath");
 
@@ -105,6 +108,7 @@
     var collapsed = !!collapsedDirs[node.path || "__root__"];
     row.textContent = (hasChildren ? (collapsed ? "▸ " : "▾ ") : "  ") + (node.name || "项目");
     row.title = node.path || "/";
+    row.dataset.path = node.path;
     row.addEventListener("click", function (event) {
       event.stopPropagation();
       if (hasChildren && event.detail === 2) {
@@ -125,6 +129,20 @@
 
   function currentFilePath() {
     return window.UrhoxPreview ? window.UrhoxPreview.currentPath : "";
+  }
+
+  function bindFileThumb(img, file) {
+    if (!img || !file) return;
+    var ref = file.ref || file.path;
+    if (window.UrhoxPreview && window.UrhoxPreview.bindImage) {
+      window.UrhoxPreview.bindImage(img, ref);
+      return;
+    }
+    if (window.UrhoxAssets && window.UrhoxAssets.bindSrc) {
+      window.UrhoxAssets.bindSrc(img, ref);
+      return;
+    }
+    if (file.path) img.src = file.path;
   }
 
   function currentEntries() {
@@ -150,10 +168,11 @@
         card.className = "file-card" + (activePath === file.path ? " active" : "") + (dirtyPaths[file.path] ? " dirty" : "") + (selectedAsset === file.path ? " reveal" : "");
         card.title = file.path;
         card.dataset.path = file.path;
-        if (file.kind === "image" && window.UrhoxPreview && window.UrhoxPreview.assetUrl) {
+        if (file.kind === "image") {
           card.innerHTML = "<img class=\"icon\" alt=\"\" draggable=\"false\" /><div class=\"name\"></div>";
-          card.querySelector("img").src = window.UrhoxPreview.assetUrl(file.ref || file.path);
-          card.querySelector("img").draggable = false;
+          var thumb = card.querySelector("img");
+          thumb.draggable = false;
+          bindFileThumb(thumb, file);
         } else {
           card.innerHTML = "<div class=\"icon\">" + (file.kind === "font" ? "TTF" : "JSON") + "</div><div class=\"name\"></div>";
         }
@@ -166,7 +185,7 @@
             event.dataTransfer.effectAllowed = "copy";
           });
         }
-        card.addEventListener("click", function () { onEntryClick(file); });
+        card.addEventListener("click", function () { return onEntryClick(file); });
         grid.appendChild(card);
       });
       projectFilesEl.appendChild(grid);
@@ -190,7 +209,7 @@
           event.dataTransfer.effectAllowed = "copy";
         });
       }
-      item.addEventListener("click", function () { onEntryClick(file); });
+      item.addEventListener("click", function () { return onEntryClick(file); });
       list.appendChild(item);
     });
     projectFilesEl.appendChild(list);
@@ -206,7 +225,7 @@
       renderAll();
       return;
     }
-    openUiFile(file);
+    return openUiFile(file);
   }
 
   function imageHasMeta(file) {
@@ -217,18 +236,53 @@
   }
 
   function applyReplace(file) {
-    if (!replaceTarget || !file || file.kind !== "image") return;
+    if (!validateImageTarget() || !file || file.kind !== "image") return false;
+    var target = replaceTarget;
+    var ref = file.ref || file.path;
+    if (target.node[target.key] === ref) {
+      cancelReplaceImage();
+      return true;
+    }
     if (!imageHasMeta(file)) {
       alert("这张图没有 .meta（" + file.name + ".meta）。\n游戏资源通常需要 meta。请先在项目里生成 meta，再引用。\n仍会写入路径，但运行时可能加载失败。");
     }
-    replaceTarget.node[replaceTarget.key] = file.ref || file.path;
-    replaceTarget.node.role = "Image";
-    var cb = replaceTarget.onChange;
-    replaceTarget = null;
-    document.body.classList.remove("picking-image");
-    if (cb) cb();
+    var cb = target.onChange;
+    if (cb) cb({ phase: "start" });
+    target.node[target.key] = ref;
+    cancelReplaceImage();
+    if (cb) cb({ phase: "end" });
     selectedAsset = file.path;
     renderAll();
+    return true;
+  }
+
+  function updateReplaceUi() {
+    var title = document.getElementById("bottomListTitle");
+    if (title) title.textContent = bottomTab === "project"
+      ? (replaceTarget ? "替换图片 · " + (replaceTarget.node.id || replaceTarget.node.type) : "Assets")
+      : "UI 文档";
+    var cancel = document.getElementById("cancelReplaceBtn");
+    if (cancel) cancel.classList.toggle("hidden", !replaceTarget);
+    document.body.classList.toggle("picking-image", !!replaceTarget);
+  }
+
+  function cancelReplaceImage() {
+    if (!replaceTarget) return false;
+    replaceTarget = null;
+    updateReplaceUi();
+    return true;
+  }
+
+  function validateImageTarget() {
+    if (!replaceTarget) return false;
+    var preview = window.UrhoxPreview;
+    var selection = preview && preview.getSelection ? preview.getSelection() : [];
+    if (!preview || preview.tree !== replaceTarget.tree || project !== replaceTarget.project ||
+        selection.length !== 1 || selection[0] !== replaceTarget.node) {
+      cancelReplaceImage();
+      return false;
+    }
+    return true;
   }
 
   function setBottomTab(tab) {
@@ -237,14 +291,9 @@
       btn.classList.toggle("active", btn.getAttribute("data-tab") === tab);
     });
     var dirTitle = document.getElementById("bottomDirTitle");
-    var listTitle = document.getElementById("bottomListTitle");
-    if (dirTitle) dirTitle.textContent = tab === "project" ? "项目目录" : "UI目录";
-    if (listTitle) {
-      listTitle.textContent = tab === "project"
-        ? (replaceTarget ? "点选或拖拽一张项目图片" : "文件")
-        : "UI配置";
-    }
-    document.body.classList.toggle("picking-image", !!(replaceTarget && tab === "project"));
+    if (dirTitle) dirTitle.textContent = tab === "project" ? "资源目录" : "UI 文档";
+    if (tab !== "project") cancelReplaceImage();
+    updateReplaceUi();
     selectedDir = "";
     renderAll();
   }
@@ -272,7 +321,10 @@
 
   function updateDirtyUi() {
     var dirty = isDirty();
-    if (saveBtn) saveBtn.disabled = !dirty;
+    if (saveBtn) {
+      saveBtn.disabled = !dirty || !!saving || opening;
+      saveBtn.textContent = saving ? "保存中…" : "保存";
+    }
     if (dirtyBadge) dirtyBadge.classList.toggle("hidden", !dirty);
     var name = projectNameEl.textContent.replace(/ \*$/, "");
     projectNameEl.textContent = dirty ? name + " *" : name;
@@ -281,8 +333,21 @@
 
   function setDirty(path, value) {
     if (!path) return;
+    if (!!dirtyPaths[path] === !!value) return;
     if (value) dirtyPaths[path] = true;
     else delete dirtyPaths[path];
+    updateDirtyUi();
+  }
+
+  function setOpening(value, message) {
+    opening = value;
+    if (openProjectBtn) openProjectBtn.disabled = value;
+    var workspace = document.querySelector(".workspace");
+    if (workspace) workspace.inert = value;
+    if (projectFilesEl) projectFilesEl.inert = value;
+    if (projectDirsEl) projectDirsEl.inert = value;
+    var status = document.getElementById("sessionStatus");
+    if (status) status.textContent = value ? (message || "正在打开文档…") : "";
     updateDirtyUi();
   }
 
@@ -295,73 +360,107 @@
     return { ok: false, error: "保存模块未加载" };
   }
 
-  async function saveCurrent() {
+  function saveCurrent() {
+    if (saving) return saving;
     if (!writeReady) {
       alert("还没有本机写盘权限。请用 Chrome / Edge 点「打开项目」，并允许读写该文件夹。");
-      return false;
+      return Promise.resolve(false);
     }
-    if (project.rootHandle && window.UrhoxSave && window.UrhoxSave.ensureWritable) {
-      var access = await window.UrhoxSave.ensureWritable(project.rootHandle);
-      if (!access.ok) {
-        writeReady = false;
-        refreshPermissionUi();
-        alert("写盘权限已失效，请重新打开项目并允许读写。");
-        return false;
-      }
-    }
-    var file = currentFile();
     var preview = window.UrhoxPreview;
-    if (!preview || !preview.tree) return false;
+    if (!preview || !preview.tree) return Promise.resolve(false);
+    var file = currentFile();
+    var targetProject = project;
+    var path = preview.currentPath;
+    // Capture both destination and contents before permission or I/O can yield.
     var json = preview.getJSON();
     var text = exportJSON(json);
-    var result = await writeFile(file, text, preview.currentPath);
-    if (result.ok) {
-      setDirty(preview.currentPath, false);
-      if (preview.markClean) preview.markClean();
+    saving = (async function () {
+      if (targetProject.rootHandle && window.UrhoxSave && window.UrhoxSave.ensureWritable) {
+        var access = await window.UrhoxSave.ensureWritable(targetProject.rootHandle);
+        if (!access.ok) {
+          if (project === targetProject) {
+            writeReady = false;
+            refreshPermissionUi();
+          }
+          throw new Error("写盘权限已失效，请重新打开项目并允许读写。");
+        }
+      }
+      var result = await writeFile(file, text, path);
+      if (!result.ok) throw new Error(result.error || "无法写回本地 json 文件");
+      if (project === targetProject && preview.currentPath === path) {
+        if (preview.markClean) preview.markClean(json);
+        else setDirty(path, JSON.stringify(preview.getJSON()) !== JSON.stringify(json));
+      }
       return true;
-    }
-    alert("保存失败：" + (result.error || "无法写回本地 json 文件"));
-    return false;
+    })().catch(function (err) {
+      alert("保存失败：" + (err.message || String(err)));
+      return false;
+    }).finally(function () {
+      saving = null;
+      updateDirtyUi();
+    });
+    updateDirtyUi();
+    return saving;
   }
 
-  function showMissingUiGuide() {
+  function showMissingUiGuide(projectName) {
+    if (window.UrhoxGuidance) {
+      window.UrhoxGuidance.open(projectName || project.name);
+      return;
+    }
     var dialog = document.getElementById("missingUiDialog");
-    if (dialog) dialog.classList.remove("hidden");
+    if (dialog) dialog.showModal();
   }
 
   function hideSaveDialog() {
     pendingFile = null;
-    saveDialog.classList.add("hidden");
+    saveDialog.close();
   }
 
   function confirmLeave(nextFile) {
     return new Promise(function (resolve) {
       pendingFile = { file: nextFile, resolve: resolve };
       saveDialogPath.textContent = currentFilePath();
-      saveDialog.classList.remove("hidden");
+      saveDialog.showModal();
     });
   }
 
-  async function requestOpenUiFile(file) {
-    if (file.path === currentFilePath()) return;
+  async function allowLeave() {
+    if (saving) await saving;
     if (isDirty()) {
-      var action = await confirmLeave(file);
-      if (action === "cancel") return;
+      var action = await confirmLeave(null);
+      if (action === "cancel") return false;
       if (action === "save") {
         var ok = await saveCurrent();
-        if (!ok) return;
-      } else {
-        setDirty(currentFilePath(), false);
+        if (!ok) return false;
+        if (isDirty()) {
+          alert("保存期间产生了新修改，已保留当前文档。请再次保存后切换。");
+          return false;
+        }
       }
     }
-    await loadUiFile(file);
+    return true;
   }
 
   async function openUiFile(file) {
-    await requestOpenUiFile(file);
+    if (opening || file.path === currentFilePath()) return false;
+    setOpening(true);
+    try {
+      if (!await allowLeave()) return false;
+      var oldPath = currentFilePath();
+      await loadUiFile(file);
+      setDirty(oldPath, false);
+      return true;
+    } catch (err) {
+      alert("无法打开「" + file.name + "」：" + (err.message || String(err)));
+      return false;
+    } finally {
+      setOpening(false);
+    }
   }
 
-  async function loadUiFile(file) {
+  async function loadUiFile(file, targetProject) {
+    targetProject = targetProject || project;
     var text;
     if (file.handle) {
       var f = await file.handle.getFile();
@@ -370,6 +469,7 @@
       text = await file.file.text();
     } else {
       var res = await fetch(file.path);
+      if (!res.ok) throw new Error("读取失败（HTTP " + res.status + "）");
       text = await res.text();
     }
     var json = JSON.parse(text);
@@ -383,8 +483,8 @@
       var opts = {
         path: file.path,
         assetRoot: file.assetRoot || assetRoot,
-        handleMap: project.handleMap,
-        blobMap: project.fileBlobs,
+        handleMap: targetProject.handleMap,
+        blobMap: targetProject.fileBlobs,
       };
       if (window.UrhoxPreview.loadTreeAsync) {
         await window.UrhoxPreview.loadTreeAsync(json, opts);
@@ -396,7 +496,7 @@
     renderAll();
   }
 
-  async function walkDirectory(handle, prefix, out) {
+  async function walkDirectory(handle, prefix, draft) {
     var iterator = handle.values();
     for (;;) {
       var step = await iterator.next();
@@ -405,19 +505,22 @@
       var path = prefix ? prefix + "/" + entry.name : entry.name;
       if (entry.kind === "directory") {
         if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "urhox-libs") continue;
-        await walkDirectory(entry, path, out);
-      } else if (entry.name.indexOf(".ui.json") !== -1) {
-        out.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "ui" });
+        await walkDirectory(entry, path, draft);
+      } else if (/\.ui\.json$/i.test(entry.name)) {
+        draft.project.files.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "ui" });
+        draft.project.handleMap[path] = entry;
+        var uiRef = path.indexOf("assets/") === 0 ? path.slice("assets/".length) : path;
+        draft.project.handleMap[uiRef] = entry;
       } else if (entry.name.slice(-5) === ".meta") {
-        metaFiles[path] = true;
-        metaFiles[path.replace(/\.meta$/, "")] = true;
+        draft.metaFiles[path] = true;
+        draft.metaFiles[path.replace(/\.meta$/, "")] = true;
       } else if (/\.(png|jpg|jpeg|webp|gif|tga)$/i.test(entry.name)) {
-        project.handleMap[path] = entry;
+        draft.project.handleMap[path] = entry;
         var ref = path.indexOf("assets/") === 0 ? path.slice("assets/".length) : path;
-        project.handleMap[ref] = entry;
-        assets.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "image", ref: ref });
+        draft.project.handleMap[ref] = entry;
+        draft.assets.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "image", ref: ref });
       } else if (/\.(ttf|otf|woff2?)$/i.test(entry.name)) {
-        assets.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "font" });
+        draft.assets.push({ path: path, name: entry.name, handle: entry, dir: dirname(path), kind: "font" });
       }
     }
   }
@@ -435,6 +538,10 @@
       setPermBadge("ok", "可写回本机");
       return;
     }
+    if (window.UrhoxConfig.LOCAL_PREVIEW) {
+      setPermBadge("warn", "只读预览 · 未写入游戏项目");
+      return;
+    }
     if (!caps.directoryPicker) {
       setPermBadge("bad", "当前浏览器不能写本机文件");
       return;
@@ -447,30 +554,35 @@
       ? await window.UrhoxSave.ensureWritable(handle)
       : { ok: false, error: "保存模块未加载" };
     if (!access.ok) {
-      writeReady = false;
-      refreshPermissionUi();
       alert("打不开可写项目：" + (access.error || "未授予文件夹读写权限") + "\n\n请在弹窗中选择「允许」读写。没有写权限就不能保存回本机 json。");
       return false;
     }
-    project.rootHandle = handle;
-    project.name = handle.name;
-    project.files = [];
-    project.handleMap = {};
-    project.fileBlobs = {};
-    assets = [];
-    metaFiles = {};
+    var draft = {
+      project: { name: handle.name, rootHandle: handle, files: [], handleMap: {}, fileBlobs: {} },
+      assets: [],
+      metaFiles: {},
+    };
+    await walkDirectory(handle, "", draft);
+    draft.project.files.sort(function (a, b) { return a.path.localeCompare(b.path); });
+    if (!draft.project.files.length) {
+      showMissingUiGuide(handle.name);
+      return false;
+    }
+    if (!await allowLeave()) return false;
+    await loadUiFile(draft.project.files[0], draft.project);
+    project = draft.project;
+    assets = draft.assets;
+    resourceIndexReady = true;
+    metaFiles = draft.metaFiles;
+    dirtyPaths = {};
+    replaceTarget = null;
+    document.body.classList.remove("picking-image");
     selectedDir = "";
     selectedAsset = "";
     writeReady = true;
-    await walkDirectory(handle, "", project.files);
     projectNameEl.textContent = project.name + " · " + project.files.length + " 个 UI";
     refreshPermissionUi();
     renderAll();
-    if (project.files.length) {
-      openUiFile(project.files[0]);
-    } else {
-      showMissingUiGuide();
-    }
     return true;
   }
 
@@ -484,7 +596,7 @@
     selectedAsset = "";
     Array.from(fileList).forEach(function (file) {
       var path = file.webkitRelativePath || file.name;
-      if (path.indexOf(".ui.json") !== -1) {
+      if (/\.ui\.json$/i.test(path)) {
         uiFiles.push({ path: path, name: basename(path), file: file, dir: dirname(path), kind: "ui" });
       }
       project.fileBlobs[path] = file;
@@ -498,6 +610,7 @@
     });
     writeReady = false;
     project.files = uiFiles;
+    resourceIndexReady = true;
     project.name = (fileList[0] && fileList[0].webkitRelativePath.split("/")[0]) || "本地项目";
     projectNameEl.textContent = project.name + " · " + project.files.length + " 个 UI（只读）";
     refreshPermissionUi();
@@ -509,20 +622,22 @@
   }
 
   openProjectBtn.addEventListener("click", async function () {
+    if (opening) return;
     var caps = window.UrhoxSave && window.UrhoxSave.capabilities ? window.UrhoxSave.capabilities() : { directoryPicker: !!window.showDirectoryPicker };
     if (!caps.directoryPicker) {
       refreshPermissionUi();
       alert("当前浏览器不能把修改写回本机项目。\n请使用 Chrome 或 Edge 打开本编辑器，再点「打开项目」。");
       return;
     }
+    setOpening(true, "正在打开项目…");
     try {
       var handle = await window.showDirectoryPicker({ mode: "readwrite" });
       await openDirectoryHandle(handle);
     } catch (err) {
       if (err && err.name === "AbortError") return;
-      writeReady = false;
-      refreshPermissionUi();
       alert("打开项目失败：" + (err && err.message ? err.message : String(err)));
+    } finally {
+      setOpening(false);
     }
   });
 
@@ -547,10 +662,15 @@
   if (missingUiOk) {
     missingUiOk.addEventListener("click", function () {
       var dialog = document.getElementById("missingUiDialog");
-      if (dialog) dialog.classList.add("hidden");
+      if (dialog) dialog.close();
     });
   }
   if (saveBtn) saveBtn.addEventListener("click", function () { saveCurrent(); });
+  saveDialog.addEventListener("cancel", function (event) {
+    event.preventDefault();
+    if (pendingFile) pendingFile.resolve("cancel");
+    hideSaveDialog();
+  });
   document.getElementById("saveDialogCancel").addEventListener("click", function () {
     if (pendingFile) pendingFile.resolve("cancel");
     hideSaveDialog();
@@ -572,52 +692,112 @@
 
   async function loadBuiltinManifest() {
     var url = (window.UrhoxConfig && window.UrhoxConfig.MANIFEST) || "examples/manifest.json";
+    var initialProject = project;
     try {
       var res = await fetch(url);
-      if (!res.ok) return;
+      if (!res.ok) throw new Error("读取项目清单失败（HTTP " + res.status + "）");
       var data = await res.json();
+      if (opening || project !== initialProject) return;
       if (data.name) project.name = data.name;
-      if (Array.isArray(data.ui)) project.files = data.ui;
+      if (Array.isArray(data.ui)) project.files = data.ui.filter(function (file) {
+        return /\.ui\.json$/i.test(file.path);
+      });
       if (Array.isArray(data.assets)) {
         assets = data.assets.map(function (a) {
-          a.hasMeta = true;
+          if (a.hasMeta == null) a.hasMeta = true;
           return a;
         });
       }
-      if (projectNameEl) projectNameEl.textContent = project.name + " · 内置示例";
+      resourceIndexReady = true;
+      if (projectNameEl) projectNameEl.textContent = project.name === "内置示例" ? project.name : project.name + " · 内置示例";
       renderAll();
-    } catch (err) {}
+      if (window.UrhoxConfig.LOCAL_PREVIEW && project.files.length) {
+        projectNameEl.textContent = project.name + " · 本地只读预览";
+        var requested = new URLSearchParams(location.search).get("ui");
+        var first = project.files.find(function (file) { return file.path === requested; })
+          || project.files.find(function (file) { return file.name === "settings.ui.json"; })
+          || project.files[0];
+        setOpening(true);
+        try {
+          await loadUiFile(first);
+        } finally {
+          setOpening(false);
+        }
+      }
+    } catch (err) {
+      var status = document.getElementById("sessionStatus");
+      if (status) status.textContent = "项目加载失败：" + (err.message || String(err));
+    }
+  }
+
+  function findAsset(ref) {
+    if (!ref) return null;
+    return assets.find(function (a) {
+      return a.kind === "image" && (
+        a.ref === ref ||
+        a.path === ref ||
+        a.path.endsWith("/" + ref) ||
+        a.path.endsWith("/assets/" + ref) ||
+        ("assets/" + ref) === a.path
+      );
+    }) || null;
+  }
+
+  function bindAssetThumb(img, ref) {
+    var found = findAsset(ref);
+    if (found) {
+      bindFileThumb(img, found);
+      return;
+    }
+    if (window.UrhoxPreview && window.UrhoxPreview.bindImage) {
+      window.UrhoxPreview.bindImage(img, ref);
+      return;
+    }
+    if (window.UrhoxAssets && window.UrhoxAssets.bindSrc) window.UrhoxAssets.bindSrc(img, ref);
   }
 
   function revealAsset(ref) {
-    var found = assets.find(function (a) {
-      return a.ref === ref || a.path === ref || a.path.endsWith("/" + ref) || ("assets/" + ref) === a.path;
-    });
+    var found = findAsset(ref);
     setBottomTab("project");
     if (!found) return;
     selectedAsset = found.path;
-    selectedDir = found.dir;
+    // Match insertPath's tree keys, not the manifest's display-only directory.
+    selectedDir = dirname(found.path).split("/").filter(Boolean).join("/");
+    collapsedDirs.__root__ = false;
+    var parts = selectedDir.split("/");
+    parts.forEach(function (_, index) {
+      collapsedDirs[parts.slice(0, index + 1).join("/")] = false;
+    });
     viewMode = "icon";
     if (viewIconBtn) viewIconBtn.classList.add("active");
     if (viewListBtn) viewListBtn.classList.remove("active");
     renderAll();
     requestAnimationFrame(function () {
-      var el = projectFilesEl.querySelector("[data-path=\"" + CSS.escape(found.path) + "\"]");
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+      if (bottomTab !== "project" || selectedAsset !== found.path) return;
+      function scrollToPath(container, path) {
+        if (!container) return;
+        var el = Array.from(container.querySelectorAll("[data-path]")).find(function (row) {
+          return row.dataset.path === path;
+        });
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+      scrollToPath(projectDirsEl, selectedDir);
+      scrollToPath(projectFilesEl, found.path);
     });
   }
 
   function beginReplaceImage(node, key, onChange) {
     if (!node) return;
-    replaceTarget = { node: node, key: key, onChange: onChange };
+    replaceTarget = { node: node, key: key, onChange: onChange,
+      tree: window.UrhoxPreview.tree, project: project };
+    if (!validateImageTarget()) return;
     setBottomTab("project");
     viewMode = "icon";
     if (viewIconBtn) viewIconBtn.classList.add("active");
     if (viewListBtn) viewListBtn.classList.remove("active");
     if (!assets.length) {
       alert("当前项目里还没有图片。请把 png/jpg 放到项目的 assets 目录后重新打开项目。只能使用项目内的图片。");
-      replaceTarget = null;
-      document.body.classList.remove("picking-image");
+      cancelReplaceImage();
       return;
     }
     renderAll();
@@ -634,19 +814,16 @@
       alert("只能使用项目内的图片。");
       return false;
     }
-    applyReplace(found);
-    return true;
+    return applyReplace(found);
   }
 
   document.querySelectorAll(".tab-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      if (replaceTarget && btn.getAttribute("data-tab") !== "project") {
-        replaceTarget = null;
-        document.body.classList.remove("picking-image");
-      }
       setBottomTab(btn.getAttribute("data-tab"));
     });
   });
+  var cancelReplaceBtn = document.getElementById("cancelReplaceBtn");
+  if (cancelReplaceBtn) cancelReplaceBtn.addEventListener("click", cancelReplaceImage);
 
   setBottomTab("ui");
   loadBuiltinManifest();
@@ -658,9 +835,20 @@
     setDirty: setDirty,
     isDirty: isDirty,
     saveCurrent: saveCurrent,
+    isOpening: function () { return opening; },
+    isResourceIndexReady: function () { return resourceIndexReady; },
     revealAsset: revealAsset,
+    resourceExists: function (ref) {
+      return assets.concat(project.files).some(function (entry) {
+        return entry.ref === ref || entry.path === ref || entry.path.endsWith("/" + ref);
+      });
+    },
     beginReplaceImage: beginReplaceImage,
+    cancelReplaceImage: cancelReplaceImage,
+    validateImageTarget: validateImageTarget,
     assignImageByRef: assignImageByRef,
+    findAsset: findAsset,
+    bindAssetThumb: bindAssetThumb,
   };
 
   renderAll();

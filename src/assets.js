@@ -4,9 +4,75 @@
   "use strict";
 
   var cache = {};
+  var urlCache = {};
   var objectUrls = [];
-  var pending = 0;
+  var handlePromises = {};
+  var generation = 0;
+  var bindings = new WeakMap();
   var context = { assetRoot: "", handleMap: {}, blobMap: {} };
+
+  function candidates(path) {
+    var list = [];
+    function add(key) {
+      if (key && list.indexOf(key) < 0) list.push(key);
+    }
+    add(path);
+    if (!path) return list;
+    if (path.indexOf("assets/") !== 0) add("assets/" + path);
+    var assetsIdx = path.indexOf("assets/");
+    if (assetsIdx > 0) {
+      add(path.slice(assetsIdx));
+      add(path.slice(assetsIdx + "assets/".length));
+    }
+    if (path.indexOf("assets/") === 0) add(path.slice("assets/".length));
+    if (context.assetRoot) add(context.assetRoot + path);
+    return list;
+  }
+
+  function cachedUrl(path) {
+    var keys = candidates(path);
+    for (var i = 0; i < keys.length; i++) {
+      if (urlCache[keys[i]]) return urlCache[keys[i]];
+    }
+    return "";
+  }
+
+  function rememberUrl(path, url) {
+    candidates(path).forEach(function (key) { urlCache[key] = url; });
+  }
+
+  function hasHandles() {
+    var handleMap = context.handleMap || {};
+    for (var key in handleMap) {
+      if (Object.prototype.hasOwnProperty.call(handleMap, key)) return true;
+    }
+    return false;
+  }
+
+  function findHandle(path) {
+    var handleMap = context.handleMap || {};
+    var keys = candidates(path);
+    var i;
+    for (i = 0; i < keys.length; i++) {
+      if (handleMap[keys[i]]) return handleMap[keys[i]];
+    }
+    var suffix = path.replace(/^assets\//, "");
+    for (var key in handleMap) {
+      if (!Object.prototype.hasOwnProperty.call(handleMap, key)) continue;
+      if (key === suffix || key === path) return handleMap[key];
+      if (key.endsWith("/" + suffix) || key.endsWith("/" + path) || key.endsWith("/assets/" + suffix)) {
+        return handleMap[key];
+      }
+    }
+    return null;
+  }
+
+  function revokeUrls() {
+    objectUrls.forEach(function (url) {
+      try { URL.revokeObjectURL(url); } catch (err) {}
+    });
+    objectUrls = [];
+  }
 
   function parseHexColor(value) {
     if (typeof value !== "string") return null;
@@ -32,42 +98,92 @@
 
   function resolve(path) {
     if (!path) return "";
-    if (/^https?:/i.test(path) || path.charAt(0) === "/") return path;
+    if (typeof path === "string" && path.charAt(0) === "$") {
+      var colon = path.indexOf(":");
+      path = colon > 0 ? path.slice(colon + 1) : "";
+      if (!path) return "";
+    }
+    if (/^https?:/i.test(path) || path.indexOf("blob:") === 0 || path.charAt(0) === "/") return path;
+    var hit = cachedUrl(path);
+    if (hit) return hit;
     var blobMap = context.blobMap || {};
-    var candidates = [path, "assets/" + path, (context.assetRoot || "") + path];
-    for (var i = 0; i < candidates.length; i++) {
-      var key = candidates[i];
+    var keys = candidates(path);
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
       if (blobMap[key]) {
-        if (!blobMap[key]._url) blobMap[key]._url = URL.createObjectURL(blobMap[key]);
-        return blobMap[key]._url;
+        var url = URL.createObjectURL(blobMap[key]);
+        objectUrls.push(url);
+        rememberUrl(path, url);
+        return url;
       }
     }
+    if (findHandle(path) || hasHandles()) return "";
     return (context.assetRoot || "") + path + "?v=original2";
   }
 
-  async function resolveHandle(path) {
-    var handleMap = context.handleMap || {};
-    var handle = handleMap[path] || handleMap["assets/" + path];
-    if (!handle) return null;
-    var file = await handle.getFile();
-    var url = URL.createObjectURL(file);
-    objectUrls.push(url);
-    return url;
+  function resolveHandle(path) {
+    var hit = cachedUrl(path);
+    if (hit) return Promise.resolve(hit);
+    var handle = findHandle(path);
+    if (!handle || typeof handle.getFile !== "function") return Promise.resolve(null);
+    if (handlePromises[path]) return handlePromises[path];
+    var version = generation;
+    handlePromises[path] = Promise.resolve().then(function () {
+      return handle.getFile();
+    }).then(function (file) {
+      if (version !== generation) return null;
+      var url = URL.createObjectURL(file);
+      objectUrls.push(url);
+      rememberUrl(path, url);
+      return url;
+    }).catch(function () {
+      if (version === generation) delete handlePromises[path];
+      return null;
+    });
+    return handlePromises[path];
+  }
+
+  function bindSrc(img, path) {
+    if (!img) return;
+    var binding = {};
+    var version = generation;
+    bindings.set(img, binding);
+    img.removeAttribute("src");
+    if (!path) return;
+    var now = resolve(path);
+    if (now) {
+      img.src = now;
+      return;
+    }
+    resolveHandle(path).then(function (url) {
+      if (version === generation && bindings.get(img) === binding && url) img.src = url;
+    }).catch(function () {});
   }
 
   function loadImage(path, onReady) {
-    if (cache[path]) return cache[path];
+    if (cache[path]) {
+      if (!cache[path].done && onReady) cache[path].callbacks.add(onReady);
+      return cache[path].image;
+    }
     var img = new Image();
-    pending += 1;
-    img.onload = img.onerror = function () {
-      pending = Math.max(0, pending - 1);
-      if (onReady) onReady();
-    };
-    img.src = resolve(path);
-    cache[path] = img;
-    resolveHandle(path).then(function (url) {
+    var version = generation;
+    var entry = { image: img, callbacks: new Set(), done: false };
+    if (onReady) entry.callbacks.add(onReady);
+    function finish() {
+      if (entry.done) return;
+      entry.done = true;
+      if (version === generation) entry.callbacks.forEach(function (callback) { callback(); });
+      entry.callbacks.clear();
+    }
+    img.onload = img.onerror = finish;
+    cache[path] = entry;
+    var now = resolve(path);
+    if (now) img.src = now;
+    else resolveHandle(path).then(function (url) {
+      if (version !== generation) return;
       if (url) img.src = url;
-    }).catch(function () {});
+      else finish();
+    });
     return img;
   }
 
@@ -90,11 +206,16 @@
   root.UrhoxAssets = {
     colorToCss: colorToCss,
     resolve: resolve,
+    bindSrc: bindSrc,
     loadImage: loadImage,
     fitRect: fitRect,
     setContext: function (next) {
+      generation += 1;
+      revokeUrls();
       context = next || { assetRoot: "", handleMap: {}, blobMap: {} };
       cache = {};
+      urlCache = {};
+      handlePromises = {};
     },
     getContext: function () { return context; },
   };

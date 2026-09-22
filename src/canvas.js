@@ -57,16 +57,28 @@
     put(x + left + cw, y + top + ch, right, bottom, imgW - right, imgH - bottom, right, bottom);
   }
 
+  function boxPath(ctx, box, radius) {
+    ctx.beginPath();
+    ctx.roundRect(box.x, box.y, Math.max(0, box.w), Math.max(0, box.h),
+      Math.max(0, Math.min(Number(radius) || 0, box.w / 2, box.h / 2)));
+  }
+
   function paintNode(ctx, node, app) {
     var box = node._layout;
     if (!box || node._hidden) return;
     var assets = root.UrhoxAssets;
-    var opacity = node.opacity == null ? 1 : node.opacity;
     ctx.save();
-    ctx.globalAlpha *= opacity;
     var bg = assets.colorToCss(node.backgroundColor);
-    if (bg) { ctx.fillStyle = bg; ctx.fillRect(box.x, box.y, box.w, box.h); }
+    if (bg) {
+      ctx.fillStyle = bg;
+      boxPath(ctx, box, node.borderRadius);
+      ctx.fill();
+    }
     if (node.backgroundImage) {
+      ctx.save();
+      boxPath(ctx, box, node.borderRadius);
+      ctx.clip();
+      ctx.globalAlpha *= node.backgroundImageOpacity == null ? 1 : node.backgroundImageOpacity;
       var img = assets.loadImage(node.backgroundImage, app.draw);
       if (img.complete && img.naturalWidth > 0) {
         if (node.backgroundFit === "sliced" && node.backgroundSlice) {
@@ -75,7 +87,7 @@
           var fitted = assets.fitRect(box, img.naturalWidth, img.naturalHeight, node.backgroundFit);
           ctx.drawImage(img, fitted.x, fitted.y, fitted.w, fitted.h);
         }
-      } else if (img.complete) {
+      } else if (img.complete && (!node.backgroundImage || String(node.backgroundImage).charAt(0) !== "$")) {
         ctx.save();
         ctx.fillStyle = "rgba(255, 80, 80, 0.18)";
         ctx.fillRect(box.x, box.y, box.w, box.h);
@@ -88,18 +100,30 @@
         ctx.fillText("缺图", box.x + box.w / 2, box.y + box.h / 2);
         ctx.restore();
       }
+      ctx.restore();
+    }
+    if (node.borderWidth > 0) {
+      var bw = Math.min(node.borderWidth, box.w / 2, box.h / 2);
+      ctx.strokeStyle = assets.colorToCss(node.borderColor) || "#000000";
+      ctx.lineWidth = bw;
+      boxPath(ctx, { x: box.x + bw / 2, y: box.y + bw / 2, w: box.w - bw, h: box.h - bw },
+        Math.max(0, (node.borderRadius || 0) - bw / 2));
+      ctx.stroke();
     }
     if ((node.type === "Label" || node.type === "Button") && node.text) {
-      var fontSize = node.fontSize || 16;
-      var weight = node.fontWeight === "bold" ? "700" : "400";
-      ctx.font = weight + " " + fontSize + "px 'PingFang SC', 'Noto Sans SC', sans-serif";
-      ctx.textAlign = node.textAlign || "left";
-      ctx.textBaseline = node.verticalAlign === "middle" ? "middle" : node.verticalAlign === "bottom" ? "bottom" : "top";
-      var tx = box.x, ty = box.y;
-      if (ctx.textAlign === "center") tx = box.x + box.w / 2;
-      if (ctx.textAlign === "right") tx = box.x + box.w;
-      if (ctx.textBaseline === "middle") ty = box.y + box.h / 2;
-      if (ctx.textBaseline === "bottom") ty = box.y + box.h;
+      ctx.font = root.UrhoxYoga.font(node);
+      ctx.textAlign = node.textAlign || (node.type === "Button" ? "center" : "left");
+      ctx.textBaseline = "middle";
+      var pad = node._padding || [0, 0, 0, 0];
+      var innerW = Math.max(0, box.w - pad[0] - pad[2]);
+      var innerH = Math.max(0, box.h - pad[1] - pad[3]);
+      var metrics = root.UrhoxYoga.textMetrics(node, innerW);
+      var tx = box.x + pad[0], ty = box.y + pad[1];
+      var vertical = node.verticalAlign || (node.type === "Button" ? "middle" : "top");
+      if (ctx.textAlign === "center") tx += innerW / 2;
+      if (ctx.textAlign === "right") tx += innerW;
+      if (vertical === "middle") ty += (innerH - metrics.height) / 2;
+      if (vertical === "bottom") ty += innerH - metrics.height;
       var fill = assets.colorToCss(node.fontColor) || "#ffffff";
       if (node.textShadow) {
         var shadow = node.textShadow;
@@ -109,7 +133,9 @@
         ctx.shadowColor = assets.colorToCss(shadow.color) || "rgba(0,0,0,0.5)";
       }
       ctx.fillStyle = fill;
-      ctx.fillText(node.text, tx, ty);
+      metrics.lines.forEach(function (line, i) {
+        ctx.fillText(line, tx, ty + (i + 0.5) * metrics.lineHeight);
+      });
     }
     ctx.restore();
   }
@@ -175,13 +201,19 @@
     ctx.restore();
   }
 
-  function collectRenderList(tree) {
-    var list = [];
-    window.UrhoxYoga.walk(tree, function (node) {
-      if (!node._hidden && node._layout) list.push(node);
-    });
-    list.sort(function (a, b) { return (a.zIndex || 0) - (b.zIndex || 0); });
-    return list;
+  function paintTree(ctx, node, app) {
+    if (!node || node._hidden || !node._layout) return;
+    ctx.save();
+    ctx.globalAlpha *= node.opacity == null ? 1 : Math.max(0, Math.min(1, node.opacity));
+    paintNode(ctx, node, app);
+    if (node.overflow === "hidden" || node.overflow === "scroll") {
+      boxPath(ctx, node._layout, node.borderRadius);
+      ctx.clip();
+    }
+    (node.children || []).slice().sort(function (a, b) {
+      return (a.zIndex || 0) - (b.zIndex || 0);
+    }).forEach(function (child) { paintTree(ctx, child, app); });
+    ctx.restore();
   }
 
   function draw(app) {
@@ -204,8 +236,7 @@
     }
     ctx.translate(fit.x, fit.y);
     ctx.scale(fit.scale, fit.scale);
-    var list = collectRenderList(tree);
-    for (var i = 0; i < list.length; i++) paintNode(ctx, list[i], app);
+    paintTree(ctx, tree, app);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (!prefab) {
@@ -237,13 +268,11 @@
     var selectedNodes = app.selectedNodes || [];
     var hover = app.hover;
     if (hover && selectedNodes.indexOf(hover) < 0 && hover._layout && !hover._hidden) {
-      if (!app.lockedFromTree || hover === selected) {
-        drawOverlay(ctx, app, hover, "hover");
-        var label = window.UrhoxTree.nodeLabel(hover);
-        var text = (label.typeName + (label.name ? " " + label.name : "")).trim();
-        if (label.extra) text += "  " + label.extra;
-        drawLabel(ctx, app, text, hover._layout.x + hover._layout.w / 2, hover._layout.y - 12);
-      }
+      drawOverlay(ctx, app, hover, "hover");
+      var label = window.UrhoxTree.nodeLabel(hover);
+      var text = (label.typeName + (label.name ? " " + label.name : "")).trim();
+      if (label.extra) text += "  " + label.extra;
+      drawLabel(ctx, app, text, hover._layout.x + hover._layout.w / 2, hover._layout.y - 12);
     }
     selectedNodes.forEach(function (node) {
       if (node && node._layout && !node._hidden && node !== selected) drawOverlay(ctx, app, node, "hover");

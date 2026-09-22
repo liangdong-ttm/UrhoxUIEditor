@@ -2,6 +2,7 @@
 // 用途：左侧 UI 节点树。只负责 DOM，选中/显隐/改父由预览模块回调。
 (function (root) {
   "use strict";
+  var draggingKey = null;
 
   function nodeLabel(node) {
     var typeName = node.type || "Node";
@@ -10,15 +11,24 @@
     return { typeName: typeName, name: name, extra: extra };
   }
 
-  function renderNode(container, node, depth, opts) {
+  function renderNode(container, node, depth, opts, parent, inheritedHidden, inheritedLocked) {
     var children = Array.isArray(node.children) ? node.children : [];
     var key = opts.nodeKey(node);
     var collapsed = !!opts.collapsed[key];
     var selected = (opts.selectedNodes || []).indexOf(node) >= 0;
 
-    var row = document.createElement("button");
-    row.type = "button";
-    row.className = "tree-row" + (selected ? " selected" : "") + (node._hidden ? " hidden-node" : "");
+    var hidden = inheritedHidden || node.visible === false;
+    var locked = inheritedLocked || node.locked;
+    var row = document.createElement("div");
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-level", depth + 1);
+    row.setAttribute("aria-selected", String(selected));
+    if (children.length) row.setAttribute("aria-expanded", String(!collapsed));
+    row.tabIndex = 0;
+    row.dataset.nodeKey = key;
+    row.title = [node.type, node.id, inheritedHidden ? "父节点已隐藏" : "",
+      inheritedLocked ? "父节点已锁定" : ""].filter(Boolean).join(" · ");
+    row.className = "tree-row" + (selected ? " selected" : "") + (hidden ? " hidden-node" : "");
     row.style.paddingLeft = (6 + depth * 14) + "px";
 
     var vis = document.createElement("input");
@@ -33,9 +43,21 @@
     });
     row.appendChild(vis);
 
-    var toggle = document.createElement("span");
+    var lock = document.createElement("span");
+    lock.className = "tree-lock";
+    lock.textContent = node.locked ? "🔒" : "";
+    if (inheritedLocked) lock.textContent = "🔒";
+    lock.title = inheritedLocked ? "父节点已锁定" : node.locked ? "已锁定" : "";
+    row.appendChild(lock);
+
+    var toggle = document.createElement(children.length ? "button" : "span");
     toggle.className = "tree-toggle";
     toggle.textContent = children.length ? (collapsed ? "▸" : "▾") : "";
+    if (children.length) {
+      toggle.type = "button";
+      toggle.title = (collapsed ? "展开 " : "折叠 ") + (node.id || node.type);
+      toggle.setAttribute("aria-label", toggle.title);
+    }
     row.appendChild(toggle);
 
     var label = nodeLabel(node);
@@ -69,7 +91,7 @@
         });
         row.appendChild(add);
       }
-      if (opts.onDelete) {
+      if (opts.onDelete && parent) {
         var del = document.createElement("button");
         del.type = "button";
         del.className = "tree-add";
@@ -88,37 +110,104 @@
       event.preventDefault();
       if (event.target === toggle && children.length) {
         opts.onToggle(key);
+        focusKey(key);
         return;
       }
       opts.onSelect(node, event.shiftKey);
+      focusKey(key);
     });
-    row.draggable = true;
+    function focusKey(nextKey) {
+      var nextRow = Array.from(container.children).find(function (el) { return el.dataset.nodeKey === nextKey; });
+      if (nextRow) nextRow.focus();
+    }
+    row.addEventListener("keydown", function (event) {
+      if (event.target !== row) {
+        if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (["Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].indexOf(event.key) < 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      var rows = Array.from(container.children);
+      var at = rows.indexOf(row);
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        var nextRow = rows[at + (event.key === "ArrowUp" ? -1 : 1)];
+        if (nextRow) nextRow.click();
+        if (nextRow) focusKey(nextRow.dataset.nodeKey);
+      } else if ((event.key === "ArrowRight" && children.length && collapsed) ||
+          (event.key === "ArrowLeft" && children.length && !collapsed)) {
+        opts.onToggle(key);
+        focusKey(key);
+      } else if (event.key === "ArrowLeft" && parent) {
+        opts.onSelect(parent, false);
+        focusKey(opts.nodeKey(parent));
+      } else if (event.key === "ArrowRight" && children.length) {
+        opts.onSelect(children[0], false);
+        focusKey(opts.nodeKey(children[0]));
+      } else {
+        opts.onSelect(node, event.shiftKey);
+        focusKey(key);
+      }
+    });
+    row.draggable = !!parent && !locked;
     row.addEventListener("dragstart", function (event) {
-      event.dataTransfer.setData("text/plain", key);
+      if (!row.draggable) { event.preventDefault(); return; }
+      draggingKey = key;
+      event.dataTransfer.setData("application/x-urhox-node", key);
       event.dataTransfer.effectAllowed = "move";
     });
-    row.addEventListener("dragover", function (event) {
+    function clearDrop() {
+      row.classList.remove("drop-target", "drop-before", "drop-after");
+    }
+    function dropInfo(event) {
+      var rect = row.getBoundingClientRect();
+      var ratio = (event.clientY - rect.top) / rect.height;
+      if (parent && ratio < 0.25) return { parent: parent, index: parent.children.indexOf(node), mode: "drop-before" };
+      if (parent && ratio > 0.75) return { parent: parent, index: parent.children.indexOf(node) + 1, mode: "drop-after" };
+      return { parent: node, mode: "drop-target" };
+    }
+    function showDrop(event) {
+      clearDrop();
+      var info = dropInfo(event);
+      if (!draggingKey || draggingKey === key || !opts.canReparent(draggingKey, info.parent)) return;
       event.preventDefault();
-      row.classList.add("drop-target");
-    });
-    row.addEventListener("dragleave", function () {
-      row.classList.remove("drop-target");
+      event.dataTransfer.dropEffect = "move";
+      row.classList.add(info.mode);
+    }
+    row.addEventListener("dragenter", showDrop);
+    row.addEventListener("dragover", showDrop);
+    row.addEventListener("dragleave", clearDrop);
+    row.addEventListener("dragend", function () {
+      draggingKey = null;
+      Array.from(container.children).forEach(function (el) {
+        el.classList.remove("drop-target", "drop-before", "drop-after");
+      });
     });
     row.addEventListener("drop", function (event) {
       event.preventDefault();
-      row.classList.remove("drop-target");
-      opts.onReparent(event.dataTransfer.getData("text/plain"), node);
+      event.stopPropagation();
+      clearDrop();
+      var source = event.dataTransfer.getData("application/x-urhox-node");
+      var info = dropInfo(event);
+      if (source && source !== key && opts.canReparent(source, info.parent)) {
+        opts.onReparent(source, info.parent, info.index);
+      }
+      draggingKey = null;
     });
 
     container.appendChild(row);
     if (!collapsed) {
-      for (var i = 0; i < children.length; i++) renderNode(container, children[i], depth + 1, opts);
+      for (var i = 0; i < children.length; i++) renderNode(container, children[i], depth + 1, opts, node, hidden, locked);
     }
   }
 
   root.UrhoxTree = {
     render: function (container, rootNode, opts) {
       if (!container) return;
+      container.setAttribute("role", "tree");
+      container.setAttribute("aria-label", "UI 节点");
+      container.setAttribute("aria-multiselectable", "true");
       container.innerHTML = "";
       if (!rootNode) return;
       renderNode(container, rootNode, 0, opts);

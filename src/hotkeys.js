@@ -14,6 +14,21 @@
   }
 
   window.addEventListener("keydown", function (event) {
+    if (event.defaultPrevented || event.isComposing) return;
+    var save = mod(event) && event.key.toLowerCase() === "s";
+    // Suppress browser Save Page even when the editor is busy or modal.
+    if (save) event.preventDefault();
+    if (document.querySelector("dialog[open]")) return;
+    if (window.UrhoxProject && window.UrhoxProject.isOpening && window.UrhoxProject.isOpening()) return;
+    if (event.key === "Escape" && !isTyping(event.target) && window.UrhoxProject &&
+        window.UrhoxProject.cancelReplaceImage && window.UrhoxProject.cancelReplaceImage()) {
+      event.preventDefault();
+      return;
+    }
+    if (save) {
+      if (window.UrhoxProject) window.UrhoxProject.saveCurrent();
+      return;
+    }
     if (isTyping(event.target)) return;
     var api = window.UrhoxPreview;
     var view = window.UrhoxView;
@@ -22,11 +37,6 @@
     var key = event.key;
     var shift = event.shiftKey;
 
-    if (mod(event) && key.toLowerCase() === "s") {
-      event.preventDefault();
-      if (window.UrhoxProject) window.UrhoxProject.saveCurrent();
-      return;
-    }
     if (mod(event) && key.toLowerCase() === "z") {
       event.preventDefault();
       if (shift) api.redo();
@@ -60,6 +70,7 @@
     }
     if (mod(event) && key.toLowerCase() === "a") {
       event.preventDefault();
+      if (api.selectAll) api.selectAll();
       return;
     }
     if (mod(event) && shift && key.toLowerCase() === "h") {
@@ -122,17 +133,17 @@
       api.nudge(dx, dy);
       return;
     }
-    if (shift && key === "1" && view) {
+    if (shift && !mod(event) && !event.altKey && (event.code === "Digit1" || key === "1") && view) {
       event.preventDefault();
       view.fit();
       return;
     }
-    if (shift && key === "0" && view) {
+    if (shift && !mod(event) && !event.altKey && (event.code === "Digit0" || key === "0") && view) {
       event.preventDefault();
       view.setZoom(1);
       return;
     }
-    if (shift && key === "2" && view) {
+    if (shift && !mod(event) && !event.altKey && (event.code === "Digit2" || key === "2") && view) {
       event.preventDefault();
       view.fitSelected && view.fitSelected();
       return;

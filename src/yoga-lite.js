@@ -1,112 +1,130 @@
+// Adapter between the declaration format and the locally bundled Yoga engine.
 (function (root) {
   "use strict";
+  var Y = root.UrhoxYogaEngine;
+  var measureContext = typeof document !== "undefined"
+    ? document.createElement("canvas").getContext("2d") : null;
 
-  function isPercent(value) {
-    return typeof value === "string" && /%$/.test(value);
+  function font(node) {
+    return (node.fontWeight === "bold" ? "700 " : "400 ") +
+      (Number(node.fontSize) || 16) + "px 'PingFang SC', 'Noto Sans SC', sans-serif";
   }
 
-  function parsePercent(value) {
-    return parseFloat(value) / 100;
-  }
-
-  function resolveLength(value, parentSize) {
-    if (value == null || value === false) return undefined;
-    if (typeof value === "number" && isFinite(value)) return value;
-    if (isPercent(value) && typeof parentSize === "number") {
-      return parentSize * parsePercent(value);
+  function textMetrics(node, maxWidth) {
+    var size = Number(node.fontSize) || 16;
+    if (measureContext) measureContext.font = font(node);
+    function width(text) {
+      return measureContext ? measureContext.measureText(text).width : Array.from(text).length * size;
     }
-    return undefined;
-  }
-
-  function createLayout(x, y, w, h) {
-    return { x: x || 0, y: y || 0, w: w || 0, h: h || 0 };
-  }
-
-  function layoutNode(node, parentWidth, parentHeight, originX, originY) {
-    if (!node || typeof node !== "object") return;
-    if (node.visible === false) {
-      node._layout = createLayout(originX, originY, 0, 0);
-      node._hidden = true;
-      var hiddenChildren = Array.isArray(node.children) ? node.children : [];
-      for (var hi = 0; hi < hiddenChildren.length; hi++) {
-        layoutNode(hiddenChildren[hi], 0, 0, originX, originY);
-        if (hiddenChildren[hi]) hiddenChildren[hi]._hidden = true;
+    var lines = [];
+    String(node.text == null ? "" : node.text).split("\n").forEach(function (paragraph) {
+      if (node.whiteSpace !== "normal" || !Number.isFinite(maxWidth) || maxWidth <= 0) {
+        lines.push(paragraph);
+        return;
       }
-      return;
-    }
-    node._hidden = false;
+      var line = "";
+      Array.from(paragraph).forEach(function (char) {
+        if (line && width(line + char) > maxWidth) {
+          lines.push(line);
+          line = "";
+        }
+        line += char;
+      });
+      lines.push(line);
+    });
+    var lineHeight = size * (Number(node.lineHeight) || 1.4);
+    return { lines: lines, width: Math.max.apply(null, lines.map(width).concat([0])),
+      height: Math.ceil(lines.length * lineHeight), lineHeight: lineHeight };
+  }
 
-    var position = node.position || "relative";
-    var width = resolveLength(node.width, parentWidth);
-    var height = resolveLength(node.height, parentHeight);
-    var x = originX;
-    var y = originY;
+  function validLength(value) {
+    return typeof value === "number" && Number.isFinite(value) ||
+      typeof value === "string" && /^(auto|-?\d+(?:\.\d+)?%?)$/.test(value);
+  }
 
-    if (position === "absolute") {
-      var left = resolveLength(node.left, parentWidth);
-      var top = resolveLength(node.top, parentHeight);
-      var right = resolveLength(node.right, parentWidth);
-      var bottom = resolveLength(node.bottom, parentHeight);
-      if (left != null) x = originX + left;
-      else if (right != null && width != null) x = originX + parentWidth - right - width;
-      else x = originX;
-      if (top != null) y = originY + top;
-      else if (bottom != null && height != null) y = originY + parentHeight - bottom - height;
-      else y = originY;
-      if (width == null && left != null && right != null) width = Math.max(0, parentWidth - left - right);
-      if (height == null && top != null && bottom != null) height = Math.max(0, parentHeight - top - bottom);
-    } else {
-      if (width == null) width = parentWidth;
-      if (height == null) height = parentHeight;
-    }
+  function enumValue(prefix, value) {
+    if (typeof value !== "string") return undefined;
+    return Y[prefix + value.toUpperCase().replace(/-/g, "_")];
+  }
 
-    width = width || 0;
-    height = height || 0;
-    node._layout = createLayout(x, y, width, height);
-
-    var children = Array.isArray(node.children) ? node.children : [];
-    var cursorY = y;
-    var gap = typeof node.gap === "number" ? node.gap : 0;
-    var direction = node.flexDirection || "column";
-    var flowing = [];
-    for (var i = 0; i < children.length; i++) {
-      var child = children[i];
-      if (!child || child.visible === false) {
-        if (child) layoutNode(child, width, height, x, y);
-        continue;
+  function build(node) {
+    var yn = Y.Node.create();
+    try {
+      yn.setPositionType(node.position === "absolute" ? Y.POSITION_TYPE_ABSOLUTE : Y.POSITION_TYPE_RELATIVE);
+      yn.setFlexShrink(0);
+      if (node.visible === false) yn.setDisplay(Y.DISPLAY_NONE);
+      ["width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight", "flexBasis"].forEach(function (key) {
+        if (validLength(node[key])) yn["set" + key[0].toUpperCase() + key.slice(1)](node[key]);
+      });
+      ["flexGrow", "flexShrink", "aspectRatio"].forEach(function (key) {
+        if (typeof node[key] === "number" && Number.isFinite(node[key])) {
+          yn["set" + key[0].toUpperCase() + key.slice(1)](node[key]);
+        }
+      });
+      [["flexDirection", "FLEX_DIRECTION_"], ["justifyContent", "JUSTIFY_"],
+        ["alignItems", "ALIGN_"], ["alignSelf", "ALIGN_"], ["alignContent", "ALIGN_"],
+        ["flexWrap", "WRAP_"]].forEach(function (pair) {
+        var constant = enumValue(pair[1], node[pair[0]]);
+        if (constant !== undefined) yn["set" + pair[0][0].toUpperCase() + pair[0].slice(1)](constant);
+      });
+      ["padding", "margin"].forEach(function (key) {
+        [["", "ALL"], ["Horizontal", "HORIZONTAL"], ["Vertical", "VERTICAL"],
+          ["Left", "LEFT"], ["Top", "TOP"], ["Right", "RIGHT"], ["Bottom", "BOTTOM"]].forEach(function (edge) {
+          var value = node[key + edge[0]];
+          if (validLength(value) && !(key === "padding" && value === "auto")) {
+            yn[key === "padding" ? "setPadding" : "setMargin"](Y["EDGE_" + edge[1]], value);
+          }
+        });
+      });
+      ["left", "top", "right", "bottom"].forEach(function (key) {
+        if (validLength(node[key])) yn.setPosition(Y["EDGE_" + key.toUpperCase()], node[key]);
+      });
+      if (typeof node.borderWidth === "number") yn.setBorder(Y.EDGE_ALL, Math.max(0, node.borderWidth));
+      if (validLength(node.gap) && node.gap !== "auto") yn.setGap(Y.GUTTER_ALL, node.gap);
+      var kids = node.children || [];
+      if (!kids.length && (node.type === "Label" || node.type === "Button")) {
+        yn.setMeasureFunc(function (width, widthMode) {
+          var metrics = textMetrics(node, widthMode === Y.MEASURE_MODE_UNDEFINED ? Infinity : width);
+          return { width: metrics.width, height: metrics.height };
+        });
       }
-      if ((child.position || "relative") === "absolute") layoutNode(child, width, height, x, y);
-      else flowing.push(child);
-    }
-    for (var j = 0; j < flowing.length; j++) {
-      var flowChild = flowing[j];
-      if (direction === "row") layoutNode(flowChild, width, height, x, y);
-      else {
-        layoutNode(flowChild, width, height, x, cursorY);
-        cursorY += (flowChild._layout && flowChild._layout.h) || 0;
-        if (j < flowing.length - 1) cursorY += gap;
-      }
+      kids.forEach(function (child, i) { yn.insertChild(build(child), i); });
+      return yn;
+    } catch (error) {
+      yn.freeRecursive();
+      throw error;
     }
   }
 
-  function layoutTree(root, canvasWidth, canvasHeight) {
-    if (!root) return null;
-    var width = resolveLength(root.width, canvasWidth) || canvasWidth;
-    var height = resolveLength(root.height, canvasHeight) || canvasHeight;
-    layoutNode(root, width, height, 0, 0);
-    if (root._layout) {
-      root._layout.w = width;
-      root._layout.h = height;
+  function layoutTree(tree, width, height) {
+    if (!tree) return null;
+    var yn = build(tree);
+    try {
+      if (!validLength(tree.width)) yn.setWidth(width);
+      if (!validLength(tree.height)) yn.setHeight(height);
+      yn.calculateLayout(width, height, Y.DIRECTION_LTR);
+      function copy(node, layoutNode, x, y, hidden) {
+        var rect = layoutNode.getComputedLayout();
+        node._hidden = hidden || node.visible === false;
+        node._layout = { x: x + rect.left, y: y + rect.top, w: rect.width, h: rect.height };
+        node._padding = ["LEFT", "TOP", "RIGHT", "BOTTOM"].map(function (edge) {
+          return layoutNode.getComputedPadding(Y["EDGE_" + edge]);
+        });
+        (node.children || []).forEach(function (child, i) {
+          copy(child, layoutNode.getChild(i), node._layout.x, node._layout.y, node._hidden);
+        });
+      }
+      copy(tree, yn, 0, 0, false);
+      return tree;
+    } finally {
+      yn.freeRecursive();
     }
-    return root;
   }
 
   function walk(node, visit) {
     if (!node) return;
     visit(node);
-    var children = Array.isArray(node.children) ? node.children : [];
-    for (var i = 0; i < children.length; i++) walk(children[i], visit);
+    (node.children || []).forEach(function (child) { walk(child, visit); });
   }
-
-  root.UrhoxYoga = { layoutTree: layoutTree, walk: walk };
+  root.UrhoxYoga = { layoutTree: layoutTree, walk: walk, textMetrics: textMetrics, font: font };
 })(window);

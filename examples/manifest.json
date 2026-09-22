@@ -122,6 +122,104 @@
       "dir": "examples/meowdoku/image/victory_popup_slices",
       "kind": "image",
       "ref": "image/victory_popup_slices/6_1_next_button_no_text.png"
+    },
+    {
+      "path": "examples/meowdoku/image/dog_park/dog_park_background.png",
+      "name": "dog_park_background.png",
+      "dir": "examples/meowdoku/image/dog_park",
+      "kind": "image",
+      "ref": "image/dog_park/dog_park_background.png"
+    },
+    {
+      "path": "examples/meowdoku/image/gameplay_ui_slices/1_top_title_bar.png",
+      "name": "1_top_title_bar.png",
+      "dir": "examples/meowdoku/image/gameplay_ui_slices",
+      "kind": "image",
+      "ref": "image/gameplay_ui_slices/1_top_title_bar.png"
+    },
+    {
+      "path": "examples/meowdoku/image/gameplay_ui_slices/5_1_prev_button_no_text.png",
+      "name": "5_1_prev_button_no_text.png",
+      "dir": "examples/meowdoku/image/gameplay_ui_slices",
+      "kind": "image",
+      "ref": "image/gameplay_ui_slices/5_1_prev_button_no_text.png"
+    },
+    {
+      "path": "examples/meowdoku/image/gameplay_ui_slices/5_2_restart_button_no_text.png",
+      "name": "5_2_restart_button_no_text.png",
+      "dir": "examples/meowdoku/image/gameplay_ui_slices",
+      "kind": "image",
+      "ref": "image/gameplay_ui_slices/5_2_restart_button_no_text.png"
+    },
+    {
+      "path": "examples/meowdoku/image/gameplay_ui_slices/5_3_hint_button_no_text.png",
+      "name": "5_3_hint_button_no_text.png",
+      "dir": "examples/meowdoku/image/gameplay_ui_slices",
+      "kind": "image",
+      "ref": "image/gameplay_ui_slices/5_3_hint_button_no_text.png"
+    },
+    {
+      "path": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3/10_level_select_title.png",
+      "name": "10_level_select_title.png",
+      "dir": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3",
+      "kind": "image",
+      "ref": "image/level_select_slices/attempt_soft_alpha_v3/10_level_select_title.png"
+    },
+    {
+      "path": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3/11_difficulty_star_icon.png",
+      "name": "11_difficulty_star_icon.png",
+      "dir": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3",
+      "kind": "image",
+      "ref": "image/level_select_slices/attempt_soft_alpha_v3/11_difficulty_star_icon.png"
+    },
+    {
+      "path": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3/1_level_panel_frame.png",
+      "name": "1_level_panel_frame.png",
+      "dir": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3",
+      "kind": "image",
+      "ref": "image/level_select_slices/attempt_soft_alpha_v3/1_level_panel_frame.png"
+    },
+    {
+      "path": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3/2_back_button.png",
+      "name": "2_back_button.png",
+      "dir": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3",
+      "kind": "image",
+      "ref": "image/level_select_slices/attempt_soft_alpha_v3/2_back_button.png"
+    },
+    {
+      "path": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3/3_prev_button.png",
+      "name": "3_prev_button.png",
+      "dir": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3",
+      "kind": "image",
+      "ref": "image/level_select_slices/attempt_soft_alpha_v3/3_prev_button.png"
+    },
+    {
+      "path": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3/4_next_button.png",
+      "name": "4_next_button.png",
+      "dir": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3",
+      "kind": "image",
+      "ref": "image/level_select_slices/attempt_soft_alpha_v3/4_next_button.png"
+    },
+    {
+      "path": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3/5_level_tile_red.png",
+      "name": "5_level_tile_red.png",
+      "dir": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3",
+      "kind": "image",
+      "ref": "image/level_select_slices/attempt_soft_alpha_v3/5_level_tile_red.png"
+    },
+    {
+      "path": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3/9_lock_icon.png",
+      "name": "9_lock_icon.png",
+      "dir": "examples/meowdoku/image/level_select_slices/attempt_soft_alpha_v3",
+      "kind": "image",
+      "ref": "image/level_select_slices/attempt_soft_alpha_v3/9_lock_icon.png"
+    },
+    {
+      "path": "examples/meowdoku/image/rules_guide/rules_guide_vertical.png",
+      "name": "rules_guide_vertical.png",
+      "dir": "examples/meowdoku/image/rules_guide",
+      "kind": "image",
+      "ref": "image/rules_guide/rules_guide_vertical.png"
     }
   ]
 }

@@ -126,13 +126,21 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .hidden { display: none !important; }
 .file-item.dirty::after, .file-card.dirty .name::after { content: " ●"; color: #f59e0b; }
 .dialog-mask {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-  display: flex; align-items: center; justify-content: center; z-index: 50;
+  padding: 0; border: 0; background: transparent; color: var(--text);
+  max-width: calc(100vw - 32px); max-height: calc(100vh - 32px);
 }
+.dialog-mask::backdrop { background: rgba(0,0,0,0.55); }
 .dialog {
-  width: 420px; background: var(--panel); border: 1px solid var(--line);
-  border-radius: 10px; padding: 18px 18px 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+  width: 420px; max-width: 100%; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 18px 18px 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.45);
 }
+.dialog p { overflow-wrap: anywhere; }
+.dialog a { color: #93c5fd; }
+.report-text { width: 100%; box-sizing: border-box; resize: vertical; min-height: 100px; font-size: 12px; padding: 8px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; }
+.diagnostic-list { max-height: 280px; overflow: auto; margin: 12px 0; }
+.diagnostic-item { display: block; width: 100%; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 6px; background: transparent; }
+.diagnostic-item.error { border-left: 3px solid #f87171; }
+.diagnostic-item.warning { border-left: 3px solid #fbbf24; }
 .dialog h3 { margin: 0 0 8px; font-size: 16px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .guide-list { color: var(--muted); font-size: 13px; line-height: 1.6; padding-left: 18px; }
@@ -200,6 +208,9 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 }
 .tree-row:hover { background: rgba(255,255,255,0.05); }
 .tree-row.selected { background: rgba(13, 153, 255, 0.28); }
+.tree-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.tree-row.drop-before { box-shadow: inset 0 2px #0d99ff; }
+.tree-row.drop-after { box-shadow: inset 0 -2px #0d99ff; }
 .tree-row.hidden-node { color: var(--hidden); }
 .tree-vis {
   width: 14px;
@@ -208,8 +219,16 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   flex: 0 0 14px;
   accent-color: #0d99ff;
 }
-.tree-toggle { width: 14px; color: var(--muted); }
+.tree-toggle { width: 14px; flex: 0 0 14px; padding: 0; border: 0; background: transparent; color: var(--muted); }
 .tree-type { color: var(--accent); }
+.tree-type, .tree-toggle { flex-shrink: 0; }
+.tree-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-row { min-height: 26px; white-space: nowrap; }
+.device-label { white-space: nowrap; }
+.canvas-toolbar { overflow-x: auto; flex-shrink: 0; }
+.canvas-toolbar > * { flex-shrink: 0; }
+.menubar { flex-wrap: wrap; padding-top: 4px; padding-bottom: 4px; }
+.menubar-left, .menubar-right { flex-wrap: wrap; }
 .tree-text { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .canvas-pane .preview { flex: 1; min-height: 0; }
@@ -371,6 +390,10 @@ body.picking-image #bottomListTitle { color: #9fd0ff; }
   font-size: 12px;
 }
 .tab-btn.active { color: var(--text); border-bottom-color: #0d99ff; }
+.icon-btn:disabled, .add-toggle:disabled { opacity: 0.35; pointer-events: none; }
+.insp-note { padding: 8px 10px; background: rgba(13,153,255,0.12); border-radius: 6px; }
+.selection-names { overflow-wrap: anywhere; line-height: 1.6; }
+.tree-lock { width: 14px; font-size: 10px; opacity: 0.8; }
 .bottom-body {
   display: grid;
   grid-template-columns: var(--proj-left-w) var(--split) minmax(0, 1fr);
@@ -448,6 +471,17 @@ body.picking-image #bottomListTitle { color: #9fd0ff; }
   font-weight: 700;
   letter-spacing: 0.04em;
   object-fit: contain;
+  background-color: #3a4252;
+  background-image:
+    linear-gradient(45deg, #2f333c 25%, transparent 25%),
+    linear-gradient(-45deg, #2f333c 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2f333c 75%),
+    linear-gradient(-45deg, transparent 75%, #2f333c 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+}
+.file-card img.icon[src] {
+  background-color: #1b1d21;
 }
 .file-card .name {
   width: 100%;

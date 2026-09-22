@@ -19,6 +19,7 @@
         }
         return state || "denied";
       }
+      if (handle.requestPermission) return await handle.requestPermission(opts);
     } catch (err) {
       return "denied";
     }
@@ -49,15 +50,22 @@
   }
 
   async function writeViaHandle(file, text) {
-    if (!file || !file.handle || !file.handle.createWritable) return null;
-    if (file.handle.requestPermission) {
-      var perm = await file.handle.requestPermission({ mode: "readwrite" });
-      if (perm !== "granted") return { ok: false, mode: "denied", error: "没有文件写入权限" };
+    if (!file || !file.handle) return null;
+    var writable;
+    try {
+      if (!file.handle.createWritable) return { ok: false, error: "文件句柄不支持写入" };
+      var access = await ensureWritable(file.handle);
+      if (!access.ok) return { ok: false, mode: "denied", error: access.error };
+      writable = await file.handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      return { ok: true, mode: "handle" };
+    } catch (err) {
+      if (writable && writable.abort) {
+        try { await writable.abort(); } catch (abortError) {}
+      }
+      return { ok: false, mode: "handle", error: err.message || String(err) };
     }
-    var writable = await file.handle.createWritable();
-    await writable.write(text);
-    await writable.close();
-    return { ok: true, mode: "handle" };
   }
 
   async function writeViaServer(path, text) {
@@ -90,7 +98,8 @@
     ensureWritable: ensureWritable,
     write: async function (file, text, fallbackPath) {
       var handleResult = await writeViaHandle(file, text);
-      if (handleResult && handleResult.ok) return handleResult;
+      // A local handle is the user's chosen destination, even when it fails.
+      if (handleResult) return handleResult;
       if (!isPagesHost()) {
         var serverResult = await writeViaServer((file && file.path) || fallbackPath, text);
         if (serverResult && serverResult.ok) return serverResult;
