@@ -715,9 +715,9 @@
       resourceIndexReady = true;
       if (projectNameEl) projectNameEl.textContent = project.name === "内置示例" ? project.name : project.name + " · 内置示例";
       renderAll();
-      if (window.UrhoxConfig.LOCAL_PREVIEW && project.files.length) {
-        projectNameEl.textContent = project.name + " · 本地只读预览";
-        var requested = new URLSearchParams(location.search).get("ui");
+      if (project.files.length) {
+        if (window.UrhoxConfig.LOCAL_PREVIEW) projectNameEl.textContent = project.name + " · 本地只读预览";
+        var requested = window.UrhoxConfig.LOCAL_PREVIEW ? new URLSearchParams(location.search).get("ui") : null;
         var first = project.files.find(function (file) { return file.path === requested; })
           || project.files.find(function (file) { return file.name === "settings.ui.json"; })
           || project.files[0];
@@ -727,12 +727,13 @@
         } finally {
           setOpening(false);
         }
-      } else if (window.UrhoxConfig.LOCAL_PREVIEW && window.UrhoxWelcome) {
-        window.UrhoxWelcome.showEditor();
       }
+      if (window.UrhoxWelcome) window.UrhoxWelcome.ready({ exampleReady: project.files.length > 0 });
+      if (window.UrhoxConfig.LOCAL_PREVIEW && window.UrhoxWelcome) window.UrhoxWelcome.showEditor();
     } catch (err) {
       var status = document.getElementById("sessionStatus");
       if (status) status.textContent = "项目加载失败：" + (err.message || String(err));
+      if (window.UrhoxWelcome) window.UrhoxWelcome.ready({ exampleReady: false });
     }
   }
 

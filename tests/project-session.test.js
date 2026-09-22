@@ -72,6 +72,12 @@ async function setup(options = {}) {
       context.UrhoxProject.setDirty(state.path, JSON.stringify(baseline) !== JSON.stringify(state.tree));
     },
   };
+  const welcome = {
+    readyCalls: [],
+    showCalls: 0,
+    ready(options) { welcome.readyCalls.push(options || {}); },
+    showEditor() { welcome.showCalls += 1; },
+  };
   const context = vm.createContext({
     document: {
       getElementById: byId, createElement: () => new Element(),
@@ -81,8 +87,15 @@ async function setup(options = {}) {
     URLSearchParams, console, CSS: { escape: value => value },
     requestAnimationFrame: fn => fn(),
     alert: message => state.alerts.push(message),
-    fetch: async () => ({ ok: true, json: async () => options.manifest || ({ ui: [], assets: [] }) }),
+    fetch: async url => {
+      if (options.uiText && url === options.uiText.path) {
+        const text = await options.uiText.text;
+        return { ok: true, text: async () => text };
+      }
+      return { ok: true, json: async () => options.manifest || ({ ui: [], assets: [] }) };
+    },
     UrhoxConfig: { LOCAL_PREVIEW: false },
+    UrhoxWelcome: welcome,
     UrhoxPreview: preview,
     UrhoxSave: {
       capabilities: () => ({ directoryPicker: true }),
@@ -94,7 +107,7 @@ async function setup(options = {}) {
   });
   context.window = context;
   vm.runInContext(fs.readFileSync(require.resolve("../src/editor.js"), "utf8"), context);
-  await flush();
+  if (!options.deferInitialLoad) await flush();
   if (!options.manifest) await byId("openProjectBtn").fire("click");
   await flush();
   const api = context.UrhoxProject;
@@ -108,10 +121,29 @@ async function setup(options = {}) {
     assert(row, "fixture file must be in the rendered list: " + path);
     return row.fire("click");
   }
-  return { api, state, byId, clickFile };
+  return { api, state, byId, clickFile, welcome };
 }
 
 module.exports = (async function () {
+  {
+    const pending = deferred();
+    const { api, state, welcome } = await setup({
+      deferInitialLoad: true,
+      manifest: { name: "内置示例", ui: [
+        { path: "examples/demo.ui.json", name: "demo.ui.json" },
+      ], assets: [] },
+      uiText: { path: "examples/demo.ui.json", text: pending.promise },
+    });
+    assert.equal(welcome.readyCalls.length, 0,
+      "welcome must stay unavailable while the first builtin UI is still loading");
+    pending.resolve('{"type":"Panel","width":100,"height":100}');
+    await flush();
+    await flush();
+    assert.equal(state.path, "examples/demo.ui.json");
+    assert.equal(api.get().files.length, 1);
+    assert.equal(welcome.readyCalls.length, 1,
+      "welcome becomes ready only after the first builtin UI is loaded");
+  }
   {
     const path = "/project/assets/image/v2/map/world_bg_clean_v01.png";
     const ref = "image/v2/map/world_bg_clean_v01.png";
