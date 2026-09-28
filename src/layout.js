@@ -22,12 +22,24 @@
   var MIN_BOTTOM = 120;
   var MIN_PREVIEW = 220;
   var GRID = 18;
+  var STORAGE = "urhox.panel-layout.v1";
+  try {
+    var saved = JSON.parse(localStorage.getItem(STORAGE) || "null");
+    if (saved && [saved.left,saved.right,saved.bottom,saved.project].every(function (n) { return Number.isFinite(n) && n>0; })) {
+      leftW=saved.left; rightW=saved.right; bottomH=saved.bottom; projLeftW=saved.project;
+    }
+  } catch (_) {}
+
+  function persist() {
+    try { localStorage.setItem(STORAGE,JSON.stringify({left:leftW,right:rightW,bottom:bottomH,project:projLeftW})); } catch (_) {}
+  }
 
   function applySizes() {
-    root.style.setProperty("--left-w", leftW + "px");
-    root.style.setProperty("--right-w", rightW + "px");
-    root.style.setProperty("--bottom-h", bottomH + "px");
-    root.style.setProperty("--proj-left-w", projLeftW + "px");
+    var sideMax=Math.max(120,(window.innerWidth-MIN_PREVIEW-12)/2);
+    root.style.setProperty("--left-w", Math.min(leftW,sideMax) + "px");
+    root.style.setProperty("--right-w", Math.min(rightW,sideMax) + "px");
+    root.style.setProperty("--bottom-h", Math.min(bottomH,Math.max(100,window.innerHeight-240)) + "px");
+    root.style.setProperty("--proj-left-w", Math.min(projLeftW,Math.max(100,window.innerWidth-180)) + "px");
   }
 
   function applyView() {
@@ -90,9 +102,12 @@
         el.classList.remove("dragging");
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        persist();
       }
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
     });
   }
 
@@ -145,7 +160,7 @@
     var lastX = 0;
     var lastY = 0;
     preview.addEventListener("pointerdown", function (event) {
-      var pan = event.button === 1 || event.button === 2 || spaceDown;
+      var pan = event.button === 1 || (event.button === 2 && event.target !== canvas) || spaceDown;
       if (!pan) return;
       event.preventDefault();
       panning = true;
@@ -171,6 +186,10 @@
   }
 
   if (fitBtn) fitBtn.addEventListener("click", fitPreview);
+  var resetBtn=document.getElementById("resetLayoutBtn");
+  if (resetBtn) resetBtn.addEventListener("click",function () {
+    leftW=280; rightW=320; bottomH=200; projLeftW=240; persist(); applySizes(); fitPreview();
+  });
   window.addEventListener("resize", function () { applySizes(); });
 
   applySizes();

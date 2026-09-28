@@ -23,7 +23,7 @@
       return p.locked;
     })) return null;
     var pad = root.UrhoxCanvas.handleSize(app);
-    var list = root.UrhoxCanvas.handlesFor(app.selected._layout);
+    var list = root.UrhoxTransform ? root.UrhoxTransform.handles(app) : root.UrhoxCanvas.handlesFor(app.selected._layout);
     for (var i = 0; i < list.length; i++) {
       if (Math.abs(x - list[i].x) <= pad && Math.abs(y - list[i].y) <= pad) return list[i];
     }
@@ -40,26 +40,12 @@
     };
   }
 
-  function deepestChildAt(parent, x, y) {
-    var hit = null;
-    function walk(node) {
-      var box = node._layout;
-      if (!box || node._hidden) return;
-      if (x >= box.x && y >= box.y && x <= box.x + box.w && y <= box.y + box.h) {
-        if (node !== parent) hit = node;
-        (node.children || []).forEach(walk);
-      }
-    }
-    (parent.children || []).forEach(walk);
-    return hit;
-  }
-
   function nodesInMarquee(app, box) {
     var hits = [];
     window.UrhoxYoga.walk(app.tree, function (node) {
       if (!node._layout || node._hidden || node === app.tree) return;
       if (node.locked || root.UrhoxDoc.ancestors(app.tree, node).some(function (p) { return p.locked; })) return;
-      var b = node._layout;
+      var b = root.UrhoxGeom.visualBounds ? root.UrhoxGeom.visualBounds(app.tree,node) : node._layout;
       if (b.w > 0 && b.h > 0 && b.x >= box.x && b.y >= box.y &&
           b.x + b.w <= box.x + box.w && b.y + b.h <= box.y + box.h) hits.push(node);
     });
@@ -77,7 +63,7 @@
           root.UrhoxDoc.ancestors(app.sourceTree || app.tree, source).some(function (p) {
             return selected.indexOf(p) >= 0;
           })) return;
-      var b = node._layout;
+      var b = root.UrhoxGeom.visualBounds ? root.UrhoxGeom.visualBounds(app.tree,node) : node._layout;
       xs.push(b.x, b.x + b.w / 2, b.x + b.w);
       ys.push(b.y, b.y + b.h / 2, b.y + b.h);
     });
@@ -131,6 +117,13 @@
       }),
       duplicate: event.altKey && mode === "move",
     };
+    if (root.UrhoxTransform && mode !== "move") {
+      app.drag.transformItems = root.UrhoxTransform.capture(app);
+      app.drag.transformBounds = root.UrhoxTransform.bounds(app);
+      app.drag.transformCenter = root.UrhoxTransform.center(app, app.drag.transformItems);
+      app.drag.visualScale = app.drag.transformItems.length > 1 ||
+        DHasTransform(source, app.sourceTree || app.tree);
+    }
     if (app.drag.duplicate) {
       var copies = [];
       app.drag.origs.forEach(function (item) {
@@ -150,16 +143,39 @@
     }
   }
 
+  function DHasTransform(node, tree) {
+    return [node].concat(root.UrhoxDoc.ancestors(tree,node)).some(function (n) {
+      var value=root.UrhoxGeom.transformValue || function (node,key) { return node[key]; };
+      return value(n,"rotate") || (value(n,"scale") != null && value(n,"scale") !== 1) ||
+        value(n,"translateX") || value(n,"translateY");
+    });
+  }
+
   function setCursor(app, name) {
     var preview = document.getElementById("preview");
     if (!preview) return;
-    preview.classList.remove("moving", "nwse", "nesw", "ew", "ns");
+    preview.classList.remove("moving", "nwse", "nesw", "ew", "ns", "rotating");
     if (name) preview.classList.add(name);
   }
 
   function bind(app) {
     var canvas = app.canvas;
     var previewEl = document.getElementById("preview");
+    if (previewEl) previewEl.addEventListener("contextmenu", function (event) {
+      if (event.target !== previewEl || !root.UrhoxContextMenu || !app.tree) return;
+      event.preventDefault();
+      root.UrhoxContextMenu.nodes([], event.clientX, event.clientY, true);
+    });
+    canvas.addEventListener("contextmenu",function (event) {
+      if (!app.tree || !root.UrhoxWorkbench) return;
+      event.preventDefault(); event.stopPropagation();
+      var p=canvasPoint(app,event),nodes=[];
+      pickHits(app,p.x,p.y).forEach(function (n) {
+        var source=app.sourceNode ? app.sourceNode(n) : n;
+        if (nodes.indexOf(source)<0) nodes.push(source);
+      });
+      if (root.UrhoxContextMenu) root.UrhoxContextMenu.nodes(nodes,event.clientX,event.clientY,true);
+    });
     function beginMarquee(event) {
       var p = canvasPoint(app, event);
       var seed = (app.selectedNodes || []).slice();
@@ -226,7 +242,9 @@
       var p = canvasPoint(app, event);
       var target = app.selected || pickNodeAt(app, p.x, p.y);
       if (!target) return;
-      var child = deepestChildAt(target, p.x, p.y);
+      var child = pickHits(app,p.x,p.y).find(function (node) {
+        return node !== target && root.UrhoxDoc.ancestors(app.tree,node).indexOf(target)>=0;
+      });
       if (child) app.selectNode(child, false);
     });
 
@@ -235,6 +253,12 @@
       if (window.UrhoxView && window.UrhoxView.isSpaceDown()) return;
       event.preventDefault();
       var p = canvasPoint(app, event);
+      if (event.metaKey || event.ctrlKey) {
+        var all = pickHits(app,p.x,p.y);
+        var current = all.findIndex(function (n) { return app.isSelected(n); });
+        if (all.length) app.selectNode(all[(current+1)%all.length], false);
+        return;
+      }
       if (app.createKind) {
         window.UrhoxCommands.createNode(app, app.createKind, Math.round(p.x), Math.round(p.y));
         if (window.UrhoxPreview && window.UrhoxPreview.setCreateKind) window.UrhoxPreview.setCreateKind(null);
@@ -278,6 +302,24 @@
         return;
       }
       var mode = app.drag.mode;
+      if (root.UrhoxTransform && (mode === "rotate" || (mode !== "move" && app.drag.visualScale))) {
+        var center = app.drag.transformCenter, factor = 1, angle = 0;
+        if (mode === "rotate") {
+          angle = (Math.atan2(p.y-center.y,p.x-center.x) -
+            Math.atan2(app.drag.startY-center.y,app.drag.startX-center.x))*180/Math.PI;
+          if (event.shiftKey) angle = Math.round(angle/15)*15;
+        } else {
+          var b = app.drag.transformBounds;
+          center = event.altKey ? {x:b.x+b.w/2,y:b.y+b.h/2} : {
+            x:mode.includes("w") ? b.x+b.w : mode.includes("e") ? b.x : b.x+b.w/2,
+            y:mode.includes("n") ? b.y+b.h : mode.includes("s") ? b.y : b.y+b.h/2 };
+          var vx = app.drag.startX-center.x, vy = app.drag.startY-center.y;
+          factor = Math.max(0.01, ((p.x-center.x)*vx+(p.y-center.y)*vy)/Math.max(1,vx*vx+vy*vy));
+        }
+        root.UrhoxTransform.apply(app,app.drag.transformItems,center,factor,angle);
+        app.rebuildPreview(); app.draw();
+        return;
+      }
       var lockX = false, lockY = false;
       if (event.shiftKey && mode === "move") {
         if (Math.abs(dx) > Math.abs(dy)) { dy = 0; lockY = true; }
@@ -288,7 +330,13 @@
       if (mode === "move") {
         (app.drag.origs || []).forEach(function (item) {
           var src = app.sourceNode ? app.sourceNode(item.node) : item.node;
-          root.UrhoxDoc.moveWorldRect(app.sourceTree || app.tree, src, item.x + dx, item.y + dy);
+          var ddx = dx, ddy = dy;
+          if (root.UrhoxGeom.worldMatrix) {
+            var parent = root.UrhoxDoc.parentOf(app.sourceTree || app.tree, src);
+            var inv = parent && root.UrhoxGeom.inverse(root.UrhoxGeom.worldMatrix(app.sourceTree || app.tree,parent));
+            if (inv) { ddx=inv[0]*dx+inv[2]*dy; ddy=inv[1]*dx+inv[3]*dy; }
+          }
+          root.UrhoxDoc.moveWorldRect(app.sourceTree || app.tree, src, item.x + ddx, item.y + ddy);
         });
       } else {
         var next = window.UrhoxGeom.resizeRect(
@@ -302,7 +350,9 @@
       }
       app.guides = [];
       var lines = collectSnapLines(app, app.drag.node);
-      if (mode === "move") {
+      if (mode === "move" && !(app.drag.origs || []).some(function (item) {
+        return DHasTransform(item.node, app.sourceTree || app.tree);
+      })) {
         var lead = (app.drag.origs && app.drag.origs[0]) || { x: app.drag.origX, y: app.drag.origY, w: app.drag.origW, h: app.drag.origH };
         var x = lead.x + dx, y = lead.y + dy, w = lead.w, h = lead.h;
         var rect = canvas.getBoundingClientRect();

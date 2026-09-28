@@ -45,6 +45,7 @@
           <strong class="app-title">Urhox UI Editor</strong>
           <button id="openProjectBtn" type="button">打开项目</button>
           <button id="saveBtn" type="button" class="ghost" disabled>保存</button>
+          <button id="changesBtn" type="button" class="ghost">变更</button>
           <button id="checkUiBtn" type="button" class="ghost">检查 UI</button>
           <button id="skillHelpBtn" type="button" class="ghost">AI Skill</button>
           <input id="folderInput" type="file" webkitdirectory multiple hidden />
@@ -60,11 +61,15 @@
               <option value="1080p" selected>1080p 1080×1920</option>
               <option value="2k">2K 1440×2560</option>
               <option value="4k">4K 2160×3840</option>
-              <option value="1080p-land">1080p 横屏 1920×1080</option>
-              <option value="2k-land">2K 横屏 2560×1440</option>
+              <option value="customize">自定义分辨率…</option>
             </select>
           </label>
+          <div class="orientation-control" role="radiogroup" aria-label="屏幕方向">
+            <label><input type="radio" name="orientation" value="portrait" checked />竖屏</label>
+            <label><input type="radio" name="orientation" value="landscape" />横屏</label>
+          </div>
           <span id="scaleBadge" class="muted">1.00×</span>
+          <button id="resetLayoutBtn" type="button" class="ghost" title="恢复默认面板尺寸">重置布局</button>
           <span class="sep"></span>
           <span id="zoomLabel" class="muted">100%</span>
           <button id="fitBtn" type="button" class="ghost">适应</button>
@@ -87,6 +92,7 @@
             </div>
           </div>
         </div>
+        <div class="local-search"><input id="treeSearch" type="search" placeholder="搜索节点" aria-label="搜索节点" /><span id="treeSearchCount" class="muted" role="status"></span></div>
         <div id="tree" class="tree"></div>
       </aside>
       <div class="split-v" data-split="left" title="拖动调整宽度"></div>
@@ -123,6 +129,12 @@
           </div>
           <span id="meta" class="muted truncate meta-path"></span>
         </div>
+        <div class="transform-toolbar">
+          <button id="overlapBtn" type="button" class="ghost" title="列出选中位置的重叠节点">重叠节点</button>
+          <label>旋转 <input id="selectionRotation" type="number" step="1" aria-label="选择旋转角度" disabled /> °</label>
+          <label>缩放 <input id="selectionScale" type="number" min="1" max="1000" step="5" value="100" aria-label="选择等比缩放百分比" disabled /> %</label>
+          <span id="transformStatus" class="muted" role="status"></span>
+        </div>
         <main class="preview" id="preview">
           <div class="preview-stage" id="previewStage">
             <div class="artboard-label" id="artboardLabel">Frame</div>
@@ -156,6 +168,8 @@
         <div class="project-files-pane">
           <div class="panel-title project-files-title">
             <span id="bottomListTitle">文件</span>
+            <input id="entrySearch" type="search" placeholder="搜索 UI 文档" aria-label="搜索 UI 文档" />
+            <span id="entrySearchCount" class="muted" role="status"></span>
             <div class="view-toggle">
               <button id="cancelReplaceBtn" type="button" class="ghost hidden">取消选图</button>
               <button id="viewListBtn" type="button" class="ghost active">列表</button>
@@ -167,6 +181,31 @@
       </div>
     </footer>
   </div>
+
+  <dialog id="changesDialog" class="workbench-dialog" aria-labelledby="changesTitle">
+    <header><h2 id="changesTitle">保存前变更</h2><button type="button" data-close="changesDialog" class="ghost" aria-label="关闭变更预览">×</button></header>
+    <p id="changesPath" class="muted"></p>
+    <div class="change-head"><span>字段路径</span><span>保存前</span><span>保存后</span></div>
+    <div id="changesList" class="workbench-scroll"></div>
+    <footer><span id="changesSummary" role="status"></span><button id="changesConfirm" type="button">确认保存</button></footer>
+  </dialog>
+  <dialog id="deviceDialog" class="workbench-dialog device-dialog" aria-labelledby="deviceTitle">
+    <header><h2 id="deviceTitle">自定义分辨率</h2><button type="button" data-close="deviceDialog" class="ghost" aria-label="关闭自定义分辨率">×</button></header>
+    <form id="deviceForm">
+      <div class="workbench-controls"><label>宽 <input id="deviceWidth" type="number" min="240" max="4096" required /></label><button id="deviceSwap" type="button" class="ghost" title="交换宽高" aria-label="交换宽高">⇄</button><label>高 <input id="deviceHeight" type="number" min="240" max="4096" required /></label></div>
+      <label><input id="safeAreaEnabled" type="checkbox" /> 显示安全区</label>
+      <div class="safe-area-fields">
+        <label>上 <input id="safeTop" type="number" min="0" max="2048" value="0" required /></label>
+        <label>右 <input id="safeRight" type="number" min="0" max="2048" value="0" required /></label>
+        <label>下 <input id="safeBottom" type="number" min="0" max="2048" value="0" required /></label>
+        <label>左 <input id="safeLeft" type="number" min="0" max="2048" value="0" required /></label>
+      </div>
+      <p id="deviceError" class="muted" role="alert"></p>
+      <footer><span class="muted">仅预览，不修改 UI 设计尺寸</span><button type="submit">应用</button></footer>
+    </form>
+  </dialog>
+  <div id="overlapMenu" class="overlap-menu hidden" role="dialog" aria-label="重叠节点"></div>
+  <div id="contextMenu" class="context-menu hidden" role="menu" aria-label="编辑操作"></div>
 
   <dialog id="missingUiDialog" class="dialog-mask" aria-labelledby="missingUiTitle">
     <div class="dialog">
@@ -227,6 +266,6 @@
   </dialog>
 
   <script src="src/welcome.js?v=20260922-welcome4"></script>
-  <script type="module" src="src/bootstrap.js?v=20260922-welcome4"></script>
+  <script type="module" src="src/bootstrap.js?v=20260928-ui2"></script>
 </body>
 </html>

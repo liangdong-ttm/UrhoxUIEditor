@@ -49,13 +49,19 @@
     };
   }
 
-  async function writeViaHandle(file, text) {
+  async function writeViaHandle(file, text, options) {
     if (!file || !file.handle) return null;
     var writable;
     try {
       if (!file.handle.createWritable) return { ok: false, error: "文件句柄不支持写入" };
       var access = await ensureWritable(file.handle);
       if (!access.ok) return { ok: false, mode: "denied", error: access.error };
+      if (options && options.expectedText != null) {
+        var original = await file.handle.getFile();
+        if (await original.text() !== options.expectedText) {
+          return { ok:false, mode:"conflict", error:"文件已被外部修改，未覆盖。请保留当前修改后重新打开文档合并。" };
+        }
+      }
       writable = await file.handle.createWritable();
       await writable.write(text);
       await writable.close();
@@ -96,8 +102,8 @@
     canPickDirectory: canPickDirectory,
     permissionState: permissionState,
     ensureWritable: ensureWritable,
-    write: async function (file, text, fallbackPath) {
-      var handleResult = await writeViaHandle(file, text);
+    write: async function (file, text, fallbackPath, options) {
+      var handleResult = await writeViaHandle(file, text, options);
       // A local handle is the user's chosen destination, even when it fails.
       if (handleResult) return handleResult;
       if (!isPagesHost()) {

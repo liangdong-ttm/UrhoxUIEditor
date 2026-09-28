@@ -6,11 +6,12 @@ class Element {
   constructor(tagName) {
     this.tagName = tagName; this.children = []; this.style = {}; this.dataset = {}; this.attrs = {};
     this.listeners = {};
-    this.classList = { add() {}, remove() {} };
+    this.classList = { add() {}, remove() {}, toggle() {} };
   }
   set innerHTML(value) { this.children = []; }
   setAttribute(name, value) { this.attrs[name] = value; }
   appendChild(el) { this.children.push(el); }
+  replaceChildren() { this.children = []; }
   addEventListener(type, fn) { this.listeners[type] = fn; }
   focus() { focused = this; }
   click() { this.fire("click"); }
@@ -24,6 +25,7 @@ class Element {
 }
 const context = { document: { createElement: tag => new Element(tag) } };
 context.window = context;
+vm.runInNewContext(fs.readFileSync(require.resolve("../src/ui-tools.js"), "utf8"), context);
 vm.runInNewContext(fs.readFileSync(require.resolve("../src/tree.js"), "utf8"), context);
 const leaf = { id: "leaf", type: "Label" };
 const parent = { id: "parent", type: "Panel", visible: false, locked: true, children: [leaf] };

@@ -161,6 +161,7 @@
     var s = node.backgroundSlice || [40, 40, 40, 40];
     var t = s[0] || 0, r = s[1] || 0, b = s[2] || 0, l = s[3] || 0;
     ctx.save();
+    ctx.transform.apply(ctx,root.UrhoxGeom.worldMatrix(app.sourceTree || app.tree,node));
     ctx.strokeStyle = "rgba(46, 204, 113, 0.95)";
     ctx.lineWidth = screenLine(app, 1);
     ctx.setLineDash([4, 3]);
@@ -181,6 +182,9 @@
     var box = node._layout;
     if (!box || box.w <= 0 || box.h <= 0) return;
     ctx.save();
+    var tree = root.UrhoxDoc.findByEditorId(app.tree,node._editorId) === node ? app.tree : app.sourceTree || app.tree;
+    var matrix = root.UrhoxGeom.worldMatrix(tree, node);
+    ctx.transform.apply(ctx, matrix);
     if (kind === "selected") {
       ctx.strokeStyle = BLUE;
       ctx.lineWidth = screenLine(app, 1.5);
@@ -204,6 +208,7 @@
   function paintTree(ctx, node, app) {
     if (!node || node._hidden || !node._layout) return;
     ctx.save();
+    ctx.transform.apply(ctx, root.UrhoxGeom.nodeMatrix(node));
     ctx.globalAlpha *= node.opacity == null ? 1 : Math.max(0, Math.min(1, node.opacity));
     paintNode(ctx, node, app);
     if (node.overflow === "hidden" || node.overflow === "scroll") {
@@ -272,13 +277,37 @@
       var label = window.UrhoxTree.nodeLabel(hover);
       var text = (label.typeName + (label.name ? " " + label.name : "")).trim();
       if (label.extra) text += "  " + label.extra;
-      drawLabel(ctx, app, text, hover._layout.x + hover._layout.w / 2, hover._layout.y - 12);
+      var hoverBounds=root.UrhoxGeom.visualBounds(app.tree,hover);
+      drawLabel(ctx, app, text, hoverBounds.x + hoverBounds.w / 2, hoverBounds.y - 12);
     }
     selectedNodes.forEach(function (node) {
       if (node && node._layout && !node._hidden && node !== selected) drawOverlay(ctx, app, node, "hover");
     });
     if (selected && selected._layout && !selected._hidden) {
-      drawOverlay(ctx, app, selected, "selected");
+      var transform = root.UrhoxTransform;
+      drawOverlay(ctx, app, selected, transform ? "hover" : "selected");
+      if (transform) {
+        var bounds = transform.bounds(app);
+        var handles = transform.handles(app);
+        if (bounds && handles.length) {
+          ctx.save();
+          ctx.strokeStyle = BLUE;
+          ctx.lineWidth = screenLine(app, 1);
+          ctx.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h);
+          handles.forEach(function (h) {
+            var hs = handleSize(app);
+            ctx.fillStyle = h.id === "rotate" ? BLUE : "#fff";
+            if (h.id === "rotate") {
+              ctx.beginPath(); ctx.moveTo(h.x, bounds.y); ctx.lineTo(h.x, h.y); ctx.stroke();
+              ctx.beginPath(); ctx.arc(h.x, h.y, hs/2, 0, Math.PI*2); ctx.fill();
+            } else {
+              ctx.fillRect(h.x-hs/2, h.y-hs/2, hs, hs);
+              ctx.strokeRect(h.x-hs/2, h.y-hs/2, hs, hs);
+            }
+          });
+          ctx.restore();
+        }
+      }
       if (selected.backgroundFit === "sliced") drawSliceGuides(ctx, app, selected);
       if (app.drag && app.drag.mode !== "marquee") {
         var box = selected._layout;
@@ -296,8 +325,8 @@
       ctx.restore();
     }
     if (app.spacingTarget && selected && selected._layout && app.spacingTarget._layout) {
-      var a = selected._layout;
-      var b = app.spacingTarget._layout;
+      var a = root.UrhoxGeom.visualBounds(app.sourceTree || app.tree,selected);
+      var b = root.UrhoxGeom.visualBounds(app.tree,app.spacingTarget);
       var sp = window.UrhoxGeom.spacing(a, b);
       ctx.save();
       ctx.strokeStyle = PINK;
@@ -331,6 +360,14 @@
       ctx.restore();
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (!prefab && app.safeArea) {
+      var area = app.safeArea;
+      ctx.save();
+      ctx.strokeStyle = "#38cbb6"; ctx.lineWidth = 2; ctx.setLineDash([10,6]);
+      ctx.strokeRect(o.x+area.left, o.y+area.top,
+        Math.max(0,screen.width-area.left-area.right), Math.max(0,screen.height-area.top-area.bottom));
+      ctx.restore();
+    }
   }
 
   root.UrhoxCanvas = {

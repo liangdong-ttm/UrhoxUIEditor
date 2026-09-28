@@ -49,6 +49,21 @@ module.exports = (async function () {
   assert.equal(success.ok, true);
   assert.deepEqual(writes, ['{"saved":true}', "closed"]);
   assert.equal(serverWrites, 0);
+  {
+    let grant, contents="original", wrote=false;
+    const permission=new Promise(resolve => { grant=resolve; });
+    const pending=api.write({handle:{
+      queryPermission:async () => "prompt",
+      requestPermission:() => permission,
+      getFile:async () => ({text:async () => contents}),
+      createWritable:async () => ({write:async () => { wrote=true; },close:async () => {}}),
+    }},"edited",null,{expectedText:"original"});
+    contents="external update during permission";
+    grant("granted");
+    const conflict=await pending;
+    assert.equal(conflict.ok,false,"last source check occurs after granting file permission");
+    assert.equal(wrote,false,"permission wait cannot hide an external edit");
+  }
   const server = await api.write(null, "{}", "examples/test.ui.json");
   assert.equal(server.ok, true, "explicit workspace save remains supported without a handle");
   assert.equal(serverWrites, 1);

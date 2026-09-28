@@ -19,6 +19,7 @@ class Element {
   }
   set innerHTML(value) { this.children = []; this.renderVersion = (this.renderVersion || 0) + 1; }
   appendChild(child) { this.children.push(child); }
+  replaceChildren() { this.children = []; }
   addEventListener(type, handler) { (this.listeners[type] ||= []).push(handler); }
   async fire(type, props = {}) {
     await Promise.all((this.listeners[type] || []).map(fn => fn({
@@ -115,6 +116,7 @@ async function setup(options = {}) {
     addEventListener() {},
   });
   context.window = context;
+  vm.runInContext(fs.readFileSync(require.resolve("../src/ui-tools.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(require.resolve("../src/editor.js"), "utf8"), context);
   if (!options.deferInitialLoad) await flush();
   if (!options.manifest) await byId("openProjectBtn").fire("click");

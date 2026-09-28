@@ -7,14 +7,15 @@
   function nodeLabel(node) {
     var typeName = node.type || "Node";
     var name = node.id || "";
-    var extra = node.type === "Label" && node.text ? node.text : "";
+    var extra = typeof node.text === "string" ? node.text : "";
     return { typeName: typeName, name: name, extra: extra };
   }
 
   function renderNode(container, node, depth, opts, parent, inheritedHidden, inheritedLocked) {
+    if (opts.searching && !opts.searchVisible.has(node)) return;
     var children = Array.isArray(node.children) ? node.children : [];
     var key = opts.nodeKey(node);
-    var collapsed = !!opts.collapsed[key];
+    var collapsed = !opts.searching && !!opts.collapsed[key];
     var selected = (opts.selectedNodes || []).indexOf(node) >= 0;
 
     var hidden = inheritedHidden || node.visible === false;
@@ -29,6 +30,7 @@
     row.title = [node.type, node.id, inheritedHidden ? "父节点已隐藏" : "",
       inheritedLocked ? "父节点已锁定" : ""].filter(Boolean).join(" · ");
     row.className = "tree-row" + (selected ? " selected" : "") + (hidden ? " hidden-node" : "");
+    row.classList.toggle("search-match", !!opts.searching && opts.searchMatches.has(node));
     row.style.paddingLeft = (6 + depth * 14) + "px";
 
     var vis = document.createElement("input");
@@ -55,6 +57,7 @@
     toggle.textContent = children.length ? (collapsed ? "▸" : "▾") : "";
     if (children.length) {
       toggle.type = "button";
+      toggle.disabled = opts.searching;
       toggle.title = (collapsed ? "展开 " : "折叠 ") + (node.id || node.type);
       toggle.setAttribute("aria-label", toggle.title);
     }
@@ -63,18 +66,18 @@
     var label = nodeLabel(node);
     var typeEl = document.createElement("span");
     typeEl.className = "tree-type";
-    typeEl.textContent = label.typeName;
+    window.UrhoxUiTools.highlight(typeEl, label.typeName, opts.query || "");
     row.appendChild(typeEl);
     if (label.name) {
       var idEl = document.createElement("span");
       idEl.className = "tree-id";
-      idEl.textContent = " " + label.name;
+      window.UrhoxUiTools.highlight(idEl, " " + label.name, opts.query || "");
       row.appendChild(idEl);
     }
     if (label.extra) {
       var extraEl = document.createElement("span");
       extraEl.className = "tree-text";
-      extraEl.textContent = "  " + label.extra;
+      window.UrhoxUiTools.highlight(extraEl, "  " + label.extra, opts.query || "");
       row.appendChild(extraEl);
     }
     if (selected) {
@@ -116,6 +119,11 @@
       opts.onSelect(node, event.shiftKey);
       focusKey(key);
     });
+    row.addEventListener("contextmenu", function (event) {
+      if (!root.UrhoxContextMenu) return;
+      event.preventDefault(); event.stopPropagation();
+      root.UrhoxContextMenu.nodes([node], event.clientX, event.clientY);
+    });
     function focusKey(nextKey) {
       var nextRow = Array.from(container.children).find(function (el) { return el.dataset.nodeKey === nextKey; });
       if (nextRow) nextRow.focus();
@@ -135,16 +143,16 @@
         var nextRow = rows[at + (event.key === "ArrowUp" ? -1 : 1)];
         if (nextRow) nextRow.click();
         if (nextRow) focusKey(nextRow.dataset.nodeKey);
-      } else if ((event.key === "ArrowRight" && children.length && collapsed) ||
-          (event.key === "ArrowLeft" && children.length && !collapsed)) {
+      } else if (!opts.searching && ((event.key === "ArrowRight" && children.length && collapsed) ||
+          (event.key === "ArrowLeft" && children.length && !collapsed))) {
         opts.onToggle(key);
         focusKey(key);
       } else if (event.key === "ArrowLeft" && parent) {
         opts.onSelect(parent, false);
         focusKey(opts.nodeKey(parent));
       } else if (event.key === "ArrowRight" && children.length) {
-        opts.onSelect(children[0], false);
-        focusKey(opts.nodeKey(children[0]));
+        var child = opts.searching ? children.find(function (n) { return opts.searchVisible.has(n); }) : children[0];
+        if (child) { opts.onSelect(child, false); focusKey(opts.nodeKey(child)); }
       } else {
         opts.onSelect(node, event.shiftKey);
         focusKey(key);
@@ -210,7 +218,29 @@
       container.setAttribute("aria-multiselectable", "true");
       container.innerHTML = "";
       if (!rootNode) return;
+      opts.searching = !!(opts.query || "").trim();
+      opts.searchMatches = new Set();
+      opts.searchVisible = new Set();
+      if (opts.searching) {
+        function scan(node) {
+          var label = nodeLabel(node);
+          var match = [label.name, label.typeName, label.extra].some(function (value) {
+            return root.UrhoxUiTools.matchPositions(value, opts.query) !== null;
+          });
+          if (match) opts.searchMatches.add(node);
+          var childMatch = false;
+          (node.children || []).forEach(function (child) { if (scan(child)) childMatch = true; });
+          if (match || childMatch) opts.searchVisible.add(node);
+          return match || childMatch;
+        }
+        scan(rootNode);
+      }
       renderNode(container, rootNode, 0, opts);
+      if (opts.searching && !opts.searchMatches.size) {
+        var empty = document.createElement("p"); empty.className = "muted";
+        empty.textContent = "没有匹配的节点"; container.appendChild(empty);
+      }
+      return Array.from(opts.searchMatches);
     },
     nodeLabel: nodeLabel,
   };

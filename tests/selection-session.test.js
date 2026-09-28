@@ -42,6 +42,29 @@ module.exports = (async function () {
     vm.runInContext(fs.readFileSync(require.resolve("../src/" + name + ".js"), "utf8"), context);
   }
   const api = context.UrhoxPreview;
+  {
+    const tree={type:"Panel",width:600,height:1000,children:[
+      {type:"Panel",id:"rotated-group",position:"absolute",left:50,top:100,width:200,height:150,
+        rotate:35,scale:1.5,transformOrigin:"bottom-right",translateX:5,translateY:-8,children:[
+          {type:"Panel",id:"child",position:"absolute",left:20,top:30,width:60,height:40,
+            rotate:12,scale:1.2,transformOrigin:"top-left",translateX:9,translateY:-6}
+        ]},
+      {type:"Panel",id:"destination",position:"absolute",left:300,top:400,width:200,height:200,rotate:-20,scale:0.8}
+    ]};
+    api.loadTree(tree);
+    const child=tree.children[0].children[0];
+    const original=context.UrhoxGeom.visualBounds(tree,child);
+    app.selectNode(tree.children[0]);
+    api.ungroup();
+    let current=context.UrhoxGeom.visualBounds(api.tree,child);
+    for (const key of ["x","y","w","h"]) assert(Math.abs(current[key]-original[key])<0.01,"ungroup preserves transformed "+key);
+    context.UrhoxCommands.reparent(app,child,tree.children.find(n => n.id==="destination"));
+    current=context.UrhoxGeom.visualBounds(api.tree,child);
+    for (const key of ["x","y","w","h"]) assert(Math.abs(current[key]-original[key])<0.01,"reparent preserves transformed "+key);
+    api.undo();
+    current=context.UrhoxGeom.visualBounds(api.tree,context.UrhoxDoc.findById(api.tree,"child"));
+    for (const key of ["x","y","w","h"]) assert(Math.abs(current[key]-original[key])<0.01,"undo reparent preserves transformed "+key);
+  }
   const diagnosticTree = { type: "Panel", width: 400, height: 400, children: [
     { type: "Panel", children: [{ type: "Label", id: "diagnostic-target", text: "target" }] },
   ] };

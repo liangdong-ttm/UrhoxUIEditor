@@ -464,8 +464,24 @@
       if (skip.indexOf(node) >= 0) continue;
       if (!options.designMode && node.pointerEvents === "none") continue;
       var box = node._layout;
-      if (!box || !containsPoint(box, x, y)) continue;
-      if (item.clip && (item.clip.w <= 0 || item.clip.h <= 0 || !containsPoint(item.clip, x, y))) continue;
+      if (!box) continue;
+      if (root.UrhoxGeom && root.UrhoxGeom.worldMatrix) {
+        var inv = root.UrhoxGeom.inverse(root.UrhoxGeom.worldMatrix(tree, node));
+        if (!inv) continue;
+        var p = root.UrhoxGeom.point(inv, { x: x, y: y });
+        if (!containsPoint(box, p.x, p.y)) continue;
+        var clipped = ancestors(tree, node).some(function (parent) {
+          if (parent.overflow !== "hidden" && parent.overflow !== "scroll") return false;
+          var inverse = root.UrhoxGeom.inverse(root.UrhoxGeom.worldMatrix(tree, parent));
+          if (!inverse) return true;
+          var local = root.UrhoxGeom.point(inverse, { x: x, y: y });
+          return !containsPoint(parent._layout, local.x, local.y);
+        });
+        if (clipped) continue;
+      } else {
+        if (!containsPoint(box, x, y)) continue;
+        if (item.clip && (item.clip.w <= 0 || item.clip.h <= 0 || !containsPoint(item.clip, x, y))) continue;
+      }
       hits.push(node);
     }
     return hits;

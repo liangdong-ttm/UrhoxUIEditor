@@ -92,13 +92,47 @@
     }) ? nodes : [];
   }
 
+  function canPreserveTransform(app, node) {
+    var g=root.UrhoxGeom, tree=sourceRoot(app);
+    if (!g || !g.worldMatrix || !node._layout) return true;
+    return !!g.inverse(g.worldMatrix(tree,node)) && ![node].concat(Doc().ancestors(tree,node)).some(function (n) {
+      return ["rotate","scale","translateX","translateY","transformOrigin"].some(function (key) {
+        return typeof n[key] === "string" && n[key].charAt(0) === "$";
+      });
+    });
+  }
+
+  function visualFrame(app, node) {
+    var g=root.UrhoxGeom, b=node._layout;
+    return g && g.worldMatrix && b ? g.multiply(g.worldMatrix(sourceRoot(app),node),[1,0,0,1,b.x,b.y]) : null;
+  }
+
+  function restoreVisualFrame(app, node, frame) {
+    if (!frame || !node._layout) return;
+    var g=root.UrhoxGeom, b=node._layout, parent=parentOf(app,node);
+    var inverse=parent ? g.inverse(g.worldMatrix(sourceRoot(app),parent)) : [1,0,0,1,0,0];
+    if (!inverse) return;
+    var matrix=g.multiply(g.multiply(inverse,frame),[1,0,0,1,-b.x,-b.y]);
+    var current=g.nodeMatrix(node);
+    if (matrix.every(function (v,i) { return Math.abs(v-current[i])<1e-7; })) return;
+    // Uniform engine transforms have no skew. Recover their local parameters after reparenting.
+    var scale=Math.hypot(matrix[0],matrix[1]), angle=Math.atan2(matrix[1],matrix[0])*180/Math.PI;
+    var o=g.pivot(node), linear=[matrix[0],matrix[1],matrix[2],matrix[3],0,0];
+    var translation=g.point(g.inverse(linear),{
+      x:matrix[4]-o.x+matrix[0]*o.x+matrix[2]*o.y,
+      y:matrix[5]-o.y+matrix[1]*o.x+matrix[3]*o.y
+    });
+    node.rotate=angle; node.scale=scale;
+    node.translateX=translation.x; node.translateY=translation.y;
+  }
+
   function ungroupTarget(app) {
     var selected = app.selectedNodes || (app.selected ? [app.selected] : []);
     if (selected.length !== 1) return null;
     var nodes = commandNodes(app, selected, true);
     var node = nodes[0];
     return node && node.position === "absolute" && node.children && node.children.length && node.children.every(function (child) {
-      return child.position === "absolute" && !Doc().isGenerated(child);
+      return child.position === "absolute" && !Doc().isGenerated(child) && canPreserveTransform(app,child);
     }) ? node : null;
   }
 
@@ -120,10 +154,37 @@
     if ([node, newParent].some(function (n) {
       return n.locked || Doc().ancestors(tree, n).some(function (p) { return p.locked; });
     })) return false;
+    if (parentOf(app,node) !== newParent && (!canPreserveTransform(app,node) || !canPreserveTransform(app,newParent))) return false;
     return Doc().ancestors(tree, newParent).indexOf(node) < 0;
   }
 
   root.UrhoxCommands = {
+    contextState: function (app) {
+      var tree = sourceRoot(app), selected = app.selectedNodes || [], node = app.selected;
+      var parent = node || tree;
+      var inheritedLock = node && Doc().ancestors(tree, node).some(function (n) { return n.locked; });
+      var editable = !!node && !node.locked && !inheritedLock && !Doc().isGenerated(node);
+      var canAdd = !!parent && !parent.locked && !Doc().isGenerated(parent) && !inheritedLock &&
+        !parent.component && !parent.$repeat && parent.type !== "Label";
+      var nodes = commandNodes(app);
+      var arrange = nodes.length === selected.length && nodes.length >= 2 && nodes.every(function (n) {
+        return n.position === "absolute" && [n].concat(Doc().ancestors(tree, n)).every(function (p) {
+          var g = root.UrhoxGeom;
+          return !g.transformValue(p, "rotate") && !g.transformValue(p, "translateX") &&
+            !g.transformValue(p, "translateY") && (g.transformValue(p, "scale") == null || g.transformValue(p, "scale") === 1);
+        });
+      });
+      return {
+        copy: nodes.length > 0, duplicate: nodes.length > 0, remove: commandNodes(app, null, true).length > 0,
+        rename: selected.length === 1 && editable, visibility: selected.length === 1 && editable,
+        lock: selected.length === 1 && !inheritedLock && !Doc().isGenerated(node),
+        add: selected.length <= 1 && canAdd,
+        paste: selected.length <= 1 && canAdd && !!app.clipboard && app.clipboard.length > 0,
+        group: groupTargets(app).length > 0, ungroup: !!ungroupTarget(app),
+        align: arrange, distribute: arrange && nodes.length >= 3,
+        image: selected.length === 1 && editable && node.type !== "Label",
+      };
+    },
     canReparent: canReparent,
     deleteTargets: function (app, nodes) { return commandNodes(app, nodes, true); },
     canGroup: function (app) { return groupTargets(app).length > 0; },
@@ -139,7 +200,13 @@
       app.pushHistory();
       nodes.forEach(function (node) {
         var box = worldRect(app, node);
-        Doc().moveWorldRect(sourceRoot(app), node, box.x + dx, box.y + dy);
+        var x=dx,y=dy,parent=parentOf(app,node),g=root.UrhoxGeom;
+        if (parent && g && g.worldMatrix) {
+          var inverse=g.inverse(g.worldMatrix(sourceRoot(app),parent));
+          if (!inverse) return;
+          x=inverse[0]*dx+inverse[2]*dy; y=inverse[1]*dx+inverse[3]*dy;
+        }
+        Doc().moveWorldRect(sourceRoot(app), node, box.x + x, box.y + y);
       });
       afterChange(app);
     },
@@ -260,6 +327,7 @@
       next = Math.max(0, Math.min((newParent.children || []).length - (sameParent ? 1 : 0), next));
       if (sameParent && next === oldIndex) return false;
       var world = worldRect(app, node);
+      var visual = visualFrame(app,node);
       app.pushHistory();
       oldParent.children = (oldParent.children || []).filter(function (c) { return c !== node; });
       newParent.children = newParent.children || [];
@@ -270,6 +338,7 @@
         app.layout();
         // Correct the new containing block's border origin using measured bounds.
         Doc().moveWorldRect(sourceRoot(app), node, world.x, world.y);
+        restoreVisualFrame(app,node,visual);
       }
       afterChange(app, node);
       return true;
@@ -339,10 +408,12 @@
       app.pushHistory();
       var kids = node.children.slice();
       var worlds = kids.map(function (kid) { return worldRect(app, kid); });
+      var visuals = kids.map(function (kid) { return visualFrame(app,kid); });
       parent.children.splice.apply(parent.children, [parent.children.indexOf(node), 1].concat(kids));
       if (app.rebuildPreview) app.rebuildPreview();
       app.layout();
       placeWorldRects(app, kids, worlds);
+      kids.forEach(function (kid,i) { restoreVisualFrame(app,kid,visuals[i]); });
       afterChange(app, kids);
     },
 

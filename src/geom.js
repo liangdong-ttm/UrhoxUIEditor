@@ -135,6 +135,52 @@
     return { dx: dx, dy: dy };
   }
 
+  function multiply(a, b) {
+    return [a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
+      a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
+      a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5]];
+  }
+  function point(m, p) {
+    return { x: m[0]*p.x + m[2]*p.y + m[4], y: m[1]*p.x + m[3]*p.y + m[5] };
+  }
+  function inverse(m) {
+    var d = m[0]*m[3]-m[1]*m[2];
+    if (Math.abs(d) < 1e-10) return null;
+    return [m[3]/d,-m[1]/d,-m[2]/d,m[0]/d,
+      (m[2]*m[5]-m[3]*m[4])/d,(m[1]*m[4]-m[0]*m[5])/d];
+  }
+  function pivot(node) {
+    var b = node._layout, o = transformValue(node,"transformOrigin");
+    var pairs = { "top-left":[0,0], "top-right":[1,0], "bottom-left":[0,1], "bottom-right":[1,1],
+      top:[0.5,0], bottom:[0.5,1], left:[0,0.5], right:[1,0.5] };
+    var f = Array.isArray(o) ? o : pairs[o] || [0.5,0.5];
+    return { x: b.x + b.w*(Number.isFinite(f[0]) ? f[0] : 0.5),
+      y: b.y + b.h*(Number.isFinite(f[1]) ? f[1] : 0.5) };
+  }
+  function transformValue(node,key) {
+    var value=node[key];
+    if ((value == null || typeof value === "string" && value.charAt(0) === "$") && node._previewTransform) {
+      return node._previewTransform[key];
+    }
+    return value;
+  }
+  function nodeMatrix(node) {
+    var o = pivot(node), r = (Number(transformValue(node,"rotate")) || 0)*Math.PI/180;
+    var scale=transformValue(node,"scale");
+    var s = Number.isFinite(scale) ? scale : 1, c = Math.cos(r)*s, sn = Math.sin(r)*s;
+    var tx = Number(transformValue(node,"translateX")) || 0, ty = Number(transformValue(node,"translateY")) || 0;
+    return [c,sn,-sn,c,o.x-c*o.x+sn*o.y+c*tx-sn*ty,o.y-sn*o.x-c*o.y+sn*tx+c*ty];
+  }
+  function worldMatrix(tree, node) {
+    var chain = root.UrhoxDoc.ancestors(tree, node).slice().reverse().concat([node]);
+    return chain.reduce(function (m, n) { return n._layout ? multiply(m, nodeMatrix(n)) : m; }, [1,0,0,1,0,0]);
+  }
+  function visualBounds(tree, node) {
+    var b = node._layout, m = worldMatrix(tree, node);
+    return boundsOf([{x:b.x,y:b.y}, {x:b.x+b.w,y:b.y}, {x:b.x,y:b.y+b.h}, {x:b.x+b.w,y:b.y+b.h}]
+      .map(function (p) { var v = point(m,p); return {x:v.x,y:v.y,w:0,h:0}; }));
+  }
+
   root.UrhoxGeom = {
     rect: rect,
     intersects: intersects,
@@ -143,5 +189,8 @@
     alignRects: alignRects,
     distributeRects: distributeRects,
     spacing: spacing,
+    multiply: multiply, point: point, inverse: inverse, pivot: pivot,
+    nodeMatrix: nodeMatrix, worldMatrix: worldMatrix, visualBounds: visualBounds,
+    transformValue: transformValue,
   };
 })(typeof window !== "undefined" ? window : global);

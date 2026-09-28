@@ -13,6 +13,8 @@ require("./tree-interaction.test.js");
 require("./gesture-regression.test.js");
 require("./ui-check.test.js");
 require("./site-package.test.js");
+require("./ui-tools.test.js");
+require("./panel-layout.test.js");
 require("./layout-regression.test.js").then(function () {
   return require("./save-regression.test.js");
 }).then(function () {

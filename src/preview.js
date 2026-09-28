@@ -80,6 +80,7 @@
     var badge = document.getElementById("scaleBadge");
     var label = document.getElementById("artboardLabel");
     var deviceSelect = document.getElementById("deviceSelect");
+    document.querySelectorAll('[name="orientation"]').forEach(function (radio) { radio.disabled = app.editMode === "prefab"; });
     if (app.editMode === "prefab") {
       if (badge) badge.textContent = "组件 Prefab · " + src.width + "×" + src.height;
       if (label) label.textContent = "组件  " + (app.tree && app.tree.id ? app.tree.id : "Prefab") + "  " + src.width + " × " + src.height;
@@ -129,6 +130,7 @@
     window.UrhoxDoc.ensureEditorIds(app.sourceTree);
     if (!needsPreviewCopy(app.sourceTree)) {
       app.tree = app.sourceTree;
+      window.UrhoxDoc.walk(app.sourceTree,function (node) { delete node._previewTransform; });
     } else {
       var withComponents = window.UrhoxDoc.expandComponents(app.sourceTree, app.components || {});
       app.tree = window.UrhoxDoc.expandRepeats(withComponents, app.templates || {});
@@ -148,6 +150,10 @@
         node._layout = Object.assign({}, view._layout);
         node._hidden = view._hidden;
         node._padding = view._padding;
+        node._previewTransform = {};
+        ["rotate","scale","translateX","translateY","transformOrigin"].forEach(function (key) {
+          node._previewTransform[key] = view[key];
+        });
       });
     }
     updateScaleBadge();
@@ -183,7 +189,9 @@
   function renderTreePanel() {
     var tree = app.sourceTree || app.tree;
     if (!app.treeEl || !tree) return;
-    window.UrhoxTree.render(app.treeEl, tree, {
+    var search = document.getElementById("treeSearch");
+    app.searchMatches = window.UrhoxTree.render(app.treeEl, tree, {
+      query: search ? search.value : "",
       collapsed: app.collapsed,
       selectedNodes: app.selectedNodes,
       nodeKey: window.UrhoxDoc.nodeKey,
@@ -191,6 +199,7 @@
         window.UrhoxCommands.setVisible(app, node, visible);
       },
       onToggle: function (key) {
+        if (search && search.value.trim()) return;
         app.collapsed[key] = !app.collapsed[key];
         renderTreePanel();
       },
@@ -214,6 +223,32 @@
       onDelete: function (node) {
         confirmDelete(node);
       },
+    });
+    var count = document.getElementById("treeSearchCount");
+    if (count) count.textContent = search && search.value.trim() ? app.searchMatches.length + " 项" : "";
+  }
+
+  var treeSearch = document.getElementById("treeSearch");
+  if (treeSearch) {
+    treeSearch.addEventListener("input", renderTreePanel);
+    treeSearch.addEventListener("keydown", function (event) {
+      if (event.isComposing) return;
+      if (event.key === "Escape") {
+        event.preventDefault(); event.stopPropagation();
+        treeSearch.value = ""; renderTreePanel();
+      } else if (event.key === "Enter") {
+        event.preventDefault(); event.stopPropagation();
+        var matches = app.searchMatches || [];
+        if (!matches.length) return;
+        var at = matches.indexOf(app.selected), step = event.shiftKey ? -1 : 1;
+        if (at < 0 && event.shiftKey) at = 0;
+        var node = matches[(at + step + matches.length) % matches.length];
+        selectNode(node, true);
+        var key = window.UrhoxDoc.nodeKey(node);
+        Array.from(app.treeEl.children).forEach(function (row) {
+          if (row.dataset.nodeKey === key) row.scrollIntoView({ block: "nearest" });
+        });
+      }
     });
   }
 
@@ -283,10 +318,29 @@
     }
     if (ungroupBtn) {
       ungroupBtn.disabled = !window.UrhoxCommands.canUngroup(app);
-      ungroupBtn.title = ungroupBtn.disabled ? "解组需要单个未锁定容器，容器及子节点均为绝对定位" : "解组";
+      ungroupBtn.title = ungroupBtn.disabled ? "解组需要单个未锁定绝对定位容器及子节点，且变换必须为可逆的静态值" : "解组";
     }
     var del = document.getElementById("treeDeleteBtn");
     if (del) del.disabled = !window.UrhoxCommands.deleteTargets(app).length;
+    var rotation = document.getElementById("selectionRotation");
+    var scale = document.getElementById("selectionScale");
+    var eligible = window.UrhoxTransform && window.UrhoxTransform.capture(app).length;
+    var allEligible = eligible > 0 && eligible === window.UrhoxTransform.targets(app).length &&
+      window.UrhoxTransform.targets(app).length === count;
+    if (rotation) {
+      rotation.disabled = !allEligible;
+      rotation.value = count === 1 ? (Number(window.UrhoxGeom.transformValue(app.selected,"rotate")) || 0) : 0;
+      rotation.title = count === 1 ? "旋转角度" : "绕整体中心旋转的增量";
+    }
+    if (scale) {
+      scale.disabled = !allEligible;
+      var currentScale = count === 1 ? window.UrhoxGeom.transformValue(app.selected,"scale") : 1;
+      scale.value = Math.round((currentScale == null ? 1 : currentScale)*10000)/100;
+      scale.title = count > 1 ? "相对当前选区等比缩放" : "相对原始尺寸的缩放比例";
+    }
+    var status = document.getElementById("transformStatus");
+    if (status) status.textContent = count && !allEligible ? "含根节点、锁定项、嵌套选区或动态变换" :
+      count > 1 ? count + " 个节点 · 旋转为增量，缩放为相对比例" : "";
   }
 
   function refresh() {
@@ -559,10 +613,31 @@
     if (window.UrhoxView) window.UrhoxView.fit();
   }
 
+  function syncDeviceControls() {
+    var select = document.getElementById("deviceSelect");
+    if (select) select.value = app.device.id;
+    document.querySelectorAll('[name="orientation"]').forEach(function (radio) {
+      radio.checked = radio.value === (app.orientation || "portrait");
+    });
+  }
+
   function setDevice(id) {
-    app.device = DEVICES[id] || DEVICES["1080p"];
+    var base = id === "custom" && app.customDevice ? app.customDevice : DEVICES[id] || DEVICES["1080p"];
+    var landscape = app.orientation === "landscape";
+    app.device = Object.assign({}, base, {
+      width: landscape ? Math.max(base.width, base.height) : Math.min(base.width, base.height),
+      height: landscape ? Math.min(base.width, base.height) : Math.max(base.width, base.height),
+    });
+    if (base.safeArea && (base.width > base.height) !== landscape) {
+      var area = base.safeArea;
+      app.device.safeArea = landscape
+        ? { top:area.left, right:area.top, bottom:area.right, left:area.bottom }
+        : { top:area.right, right:area.bottom, bottom:area.left, left:area.top };
+    }
+    app.safeArea = app.device.safeArea || null;
     app.screen.width = app.device.width;
     app.screen.height = app.device.height;
+    syncDeviceControls();
     if (app.tree) {
       resizeCanvas();
       layoutNow();
@@ -573,14 +648,8 @@
 
   function setProjectConfig(config) {
     app.projectConfig = config || null;
-    var id = window.UrhoxProjectConfig
-      ? window.UrhoxProjectConfig.preferredDeviceId(app.projectConfig, DEVICES)
-      : (app.projectConfig && app.projectConfig.orientation === "landscape" ? "1080p-land" : "1080p");
-    app.device = DEVICES[id] || DEVICES["1080p"] || DEVICES[Object.keys(DEVICES)[0]];
-    app.screen.width = app.device.width;
-    app.screen.height = app.device.height;
-    var select = document.getElementById("deviceSelect");
-    if (select && app.device.id) select.value = app.device.id;
+    app.orientation = config && config.orientation === "landscape" ? "landscape" : "portrait";
+    setDevice("1080p");
   }
 
   app.origin = origin;
@@ -634,6 +703,41 @@
     bindImage: function (img, path) { window.UrhoxAssets.bindSrc(img, path); },
     contentTransform: contentTransform,
     markClean: markClean,
+    getCleanJSON: function () { return JSON.parse(app.cleanState || "{}"); },
+    getDevice: function () { return { width:app.screen.width, height:app.screen.height, safeArea:app.safeArea || null, prefab:app.editMode === "prefab" }; },
+    configureDevice: function (width, height, area) {
+      if (app.editMode === "prefab" || !Number.isInteger(width) || !Number.isInteger(height) ||
+          width < 240 || height < 240 || width > 4096 || height > 4096) return false;
+      app.device = { id:"custom", name:"自定义", width:width, height:height, bezel:24 };
+      app.device.safeArea = area;
+      app.customDevice = app.device;
+      app.orientation = width > height ? "landscape" : "portrait";
+      app.screen = { width:width, height:height }; app.safeArea = area;
+      var select = document.getElementById("deviceSelect");
+      if (select) {
+        if (!select.querySelector('[value="custom"]')) {
+          var option = document.createElement("option"); option.value="custom";
+          select.insertBefore(option, select.querySelector('[value="customize"]'));
+        }
+        select.querySelector('[value="custom"]').textContent = "自定义 " + Math.min(width,height) + "×" + Math.max(width,height);
+        select.value = "custom";
+      }
+      syncDeviceControls();
+      resizeCanvas(); layoutNow(); draw();
+      if (window.UrhoxView) window.UrhoxView.fit();
+      return true;
+    },
+    pickOverlaps: function (point) {
+      var node = app.selected;
+      if (!point && node && node._layout) {
+        var b = window.UrhoxGeom.visualBounds(app.sourceTree || app.tree,node);
+        point = {x:b.x+b.w/2,y:b.y+b.h/2};
+      }
+      return point ? window.UrhoxDoc.pickAt(app.tree,point.x,point.y,{ designMode:true }).map(sourceNode)
+        .filter(function (n,i,list) { return list.indexOf(n) === i; }) : [];
+    },
+    selectNode: selectNode,
+    transformSelection: function (factor, degrees) { window.UrhoxTransform.command(app,factor,degrees); },
     undo: function () {
       restoreSnapshot(app.history.undo(app.sourceTree || app.tree, selectedEditorId(), selectedEditorIds()));
       markDirty();
@@ -657,6 +761,15 @@
     selectParent: function () { Cmd.selectParent(app); },
     selectChild: function () { Cmd.selectChild(app); },
     getSelection: function () { return app.selectedNodes.slice(); },
+    contextState: function () { return Cmd.contextState(app); },
+    addNode: function (kind) {
+      if (Cmd.contextState(app).add) Cmd.createNode(app, kind);
+    },
+    replaceSelectedImage: function (ref) {
+      if (!Cmd.contextState(app).image || !window.UrhoxProject) return;
+      window.UrhoxProject.beginReplaceImage(app.selected, "backgroundImage", onInspectorChange);
+      window.UrhoxProject.assignImageByRef(ref);
+    },
     selectDiagnosticNode: function (pointer) {
       var node = app.sourceTree, parts = pointer.split("/").slice(1);
       for (var i = 0; i + 1 < parts.length && parts[i] === "children"; i += 2) {
@@ -670,7 +783,8 @@
       setSelection(window.UrhoxDoc.selectableNodes(app.sourceTree || app.tree));
     },
     selectionBounds: function () {
-      return window.UrhoxGeom.boundsOf(app.selectedNodes.map(function (n) { return n._layout; }).filter(Boolean));
+      return window.UrhoxGeom.boundsOf(app.selectedNodes.filter(function (n) { return n._layout; })
+        .map(function (n) { return window.UrhoxGeom.visualBounds(app.sourceTree || app.tree,n); }));
     },
     setDevice: setDevice,
     setProjectConfig: setProjectConfig,
@@ -752,8 +866,20 @@
   document.addEventListener("click", hideAddPops);
   var deviceSelect = document.getElementById("deviceSelect");
   if (deviceSelect) {
-    deviceSelect.addEventListener("change", function () { setDevice(deviceSelect.value); });
+    deviceSelect.addEventListener("change", function () {
+      if (deviceSelect.value === "customize") {
+        syncDeviceControls();
+        if (window.UrhoxWorkbench) window.UrhoxWorkbench.openDeviceSettings();
+      } else setDevice(deviceSelect.value);
+    });
   }
+  document.querySelectorAll('[name="orientation"]').forEach(function (radio) {
+    radio.addEventListener("change", function () {
+      if (!radio.checked || app.editMode === "prefab") return;
+      var next = radio.value;
+      app.orientation = next; setDevice(app.device.id);
+    });
+  });
 
   if (CFG.LOCAL_PREVIEW) return;
   var uiUrl = new URLSearchParams(window.location.search).get("ui") || DEFAULT_UI;

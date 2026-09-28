@@ -1,11 +1,11 @@
 try {
-  const cacheVersion = "20260922-welcome4";
+  const cacheVersion = "20260928-ui2";
   window.UrhoxYogaEngine = (await import("../vendor/yoga-layout/dist/src/index.js")).default;
   await import("../skills/lua-ui-to-json/scripts/ui-json-check.js?" + cacheVersion);
   for (const name of [
-    "config", "project-config", "yoga-lite", "geom", "history", "doc", "assets", "tree",
-    "inspector", "canvas", "commands", "layout", "input", "preview", "save",
-    "hotkeys", "guidance", "editor",
+    "config", "project-config", "yoga-lite", "geom", "history", "doc", "assets", "ui-tools", "tree",
+    "inspector", "canvas", "commands", "layout", "transform", "input", "preview", "save",
+    "workbench", "context-menu", "hotkeys", "guidance", "editor",
   ]) {
     await import("./" + name + ".js?" + cacheVersion);
   }

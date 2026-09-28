@@ -12,8 +12,6 @@
       "1080p": { id: "1080p", name: "1080p", width: 1080, height: 1920, bezel: 28 },
       "2k": { id: "2k", name: "2K", width: 1440, height: 2560, bezel: 32 },
       "4k": { id: "4k", name: "4K", width: 2160, height: 3840, bezel: 36 },
-      "1080p-land": { id: "1080p-land", name: "1080p 横屏", width: 1920, height: 1080, bezel: 28 },
-      "2k-land": { id: "2k-land", name: "2K 横屏", width: 2560, height: 1440, bezel: 32 },
     },
   };
   var isLocalHost = location.protocol === "http:" &&

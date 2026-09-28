@@ -31,6 +31,32 @@ module.exports = (async function () {
     return { app, a, b, p, q, history };
   }
   {
+    const { app, a, b, p } = fixture();
+    app.setSelection([a]);
+    assert.equal(cmd.contextState(app).rename, true);
+    p.locked = true;
+    assert.equal(cmd.contextState(app).rename, false);
+    assert.equal(cmd.contextState(app).lock, false, "a child cannot unlock a locked ancestor");
+    assert.equal(cmd.contextState(app).add, false);
+    p.locked = false;
+    a.locked = true;
+    assert.equal(cmd.contextState(app).lock, true, "a directly locked node can be unlocked");
+    assert.equal(cmd.contextState(app).remove, false);
+    a.locked = false;
+    app.setSelection([p]);
+    b.locked = true;
+    assert.equal(cmd.contextState(app).remove, false, "deleting a parent protects its locked descendants");
+    b.locked = false;
+    app.setSelection([a, b]);
+    a.position = b.position = "absolute";
+    assert.equal(cmd.contextState(app).align, true);
+    a.rotate = 30;
+    assert.equal(cmd.contextState(app).align, false, "simple alignment cannot rewrite transformed coordinates");
+    app.setSelection([]);
+    assert.equal(cmd.contextState(app).add, true);
+    assert.equal(cmd.contextState(app).paste, false);
+  }
+  {
     const { app, a, b, p, history } = fixture();
     p.borderWidth = 7;
     a.position = b.position = "absolute";

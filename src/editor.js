@@ -41,6 +41,21 @@
   var opening = false;
   var saveDialog = document.getElementById("saveDialog");
   var saveDialogPath = document.getElementById("saveDialogPath");
+  var loadedText = {};
+  async function readText(file) { return (await file.handle.getFile()).text(); }
+  var entryQueries = { ui: "", project: "" };
+  var entrySearch = document.getElementById("entrySearch");
+  if (entrySearch) {
+    entrySearch.addEventListener("input", function () {
+      entryQueries[bottomTab] = entrySearch.value; renderAll();
+    });
+    entrySearch.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        event.stopPropagation(); event.preventDefault();
+        entrySearch.value = ""; entryQueries[bottomTab] = ""; renderAll();
+      }
+    });
+  }
 
   function dirname(path) {
     var i = path.lastIndexOf("/");
@@ -155,7 +170,7 @@
   function renderFileList(files) {
     projectFilesEl.innerHTML = "";
     if (!files.length) {
-      projectFilesEl.innerHTML = bottomTab === "project"
+      projectFilesEl.innerHTML = entryQueries[bottomTab].trim() ? '<p class="muted">没有匹配的文件</p>' : bottomTab === "project"
         ? "<p class=\"muted\">这个目录下没有图片 / 字体</p>"
         : "<p class=\"muted\">这个目录下没有 .ui.json</p>";
       return;
@@ -178,7 +193,11 @@
         } else {
           card.innerHTML = "<div class=\"icon\">" + (file.kind === "font" ? "TTF" : "JSON") + "</div><div class=\"name\"></div>";
         }
-        card.querySelector(".name").textContent = file.name;
+        window.UrhoxUiTools.highlight(card.querySelector(".name"), file.name, entryQueries[bottomTab]);
+        if (entryQueries[bottomTab].trim()) {
+          var pathLabel = document.createElement("div"); pathLabel.className = "file-path";
+          window.UrhoxUiTools.highlight(pathLabel, file.path, entryQueries[bottomTab]); card.appendChild(pathLabel);
+        }
         if (file.kind === "image") {
           card.draggable = true;
           card.addEventListener("dragstart", function (event) {
@@ -188,6 +207,7 @@
           });
         }
         card.addEventListener("click", function () { return onEntryClick(file); });
+        bindEntryMenu(card, file);
         grid.appendChild(card);
       });
       projectFilesEl.appendChild(grid);
@@ -201,8 +221,9 @@
       item.title = file.path;
       item.dataset.path = file.path;
       item.innerHTML = "<span></span><span class=\"file-path\"></span>";
-      item.querySelector("span").textContent = file.name;
-      item.querySelector(".file-path").textContent = file.dir || "";
+      window.UrhoxUiTools.highlight(item.querySelector("span"), file.name, entryQueries[bottomTab]);
+      window.UrhoxUiTools.highlight(item.querySelector(".file-path"),
+        entryQueries[bottomTab].trim() ? file.path : file.dir || "", entryQueries[bottomTab]);
       if (file.kind === "image") {
         item.draggable = true;
         item.addEventListener("dragstart", function (event) {
@@ -212,9 +233,37 @@
         });
       }
       item.addEventListener("click", function () { return onEntryClick(file); });
+      bindEntryMenu(item, file);
       list.appendChild(item);
     });
     projectFilesEl.appendChild(list);
+  }
+
+  function bindEntryMenu(element, file) {
+    element.addEventListener("contextmenu", function (event) {
+      event.preventDefault(); event.stopPropagation();
+      if (opening) return;
+      var api = window.UrhoxPreview, menu = window.UrhoxContextMenu, origin = project;
+      if (!menu) return;
+      var items;
+      if (file.kind === "image" || file.kind === "font") {
+        selectedAsset = file.path; renderAll();
+        items = [];
+        if (file.kind === "image") {
+          items.push({ label: "添加到画布", enabled: !!api.tree && !api.tree.locked, run: function () {
+            if (project === origin) api.placeImage(file.ref || file.path);
+          } }, { label: "替换选中节点图片", enabled: api.contextState().image, run: function () {
+            if (project === origin) api.replaceSelectedImage(file.ref || file.path);
+          } });
+        }
+        items.push({ label: "复制资源路径", run: function () {
+          return navigator.clipboard.writeText(file.ref || file.path);
+        } });
+      } else {
+        items = [{ label: "打开", run: function () { if (project === origin) return openUiFile(file); } }];
+      }
+      menu.open(items, event.clientX, event.clientY);
+    });
   }
 
   function onEntryClick(file) {
@@ -306,7 +355,18 @@
       projectDirsEl.innerHTML = "";
       renderDirNode(tree, projectDirsEl, 0);
     }
-    renderFileList(filesForDir(tree, selectedDir));
+    var query = entryQueries[bottomTab];
+    if (entrySearch) {
+      entrySearch.value = query;
+      entrySearch.placeholder = bottomTab === "ui" ? "搜索 UI 文档" : "搜索 Assets";
+      entrySearch.setAttribute("aria-label", entrySearch.placeholder);
+    }
+    var files = query.trim() ? currentEntries().filter(function (file) {
+      return window.UrhoxUiTools.matchPositions(file.path, query) !== null;
+    }) : filesForDir(tree, selectedDir);
+    var count = document.getElementById("entrySearchCount");
+    if (count) count.textContent = query.trim() ? files.length + " 项" : "";
+    renderFileList(files);
   }
 
   function currentFile() {
@@ -357,8 +417,8 @@
     return JSON.stringify(tree, null, 2) + "\n";
   }
 
-  async function writeFile(file, text, fallbackPath) {
-    if (window.UrhoxSave) return window.UrhoxSave.write(file, text, fallbackPath);
+  async function writeFile(file, text, fallbackPath, options) {
+    if (window.UrhoxSave) return window.UrhoxSave.write(file, text, fallbackPath, options);
     return { ok: false, error: "保存模块未加载" };
   }
 
@@ -377,6 +437,16 @@
     var json = preview.getJSON();
     var text = exportJSON(json);
     saving = (async function () {
+      if (window.UrhoxWorkbench && preview.getCleanJSON) {
+        var approved = await window.UrhoxWorkbench.review(preview.getCleanJSON(), json, path);
+        if (!approved) return false;
+        if (project !== targetProject || preview.currentPath !== path || JSON.stringify(preview.getJSON()) !== JSON.stringify(json)) {
+          throw new Error("预览期间文档已变化，请重新查看变更");
+        }
+        if (file && file.handle && loadedText[path] != null && await readText(file) !== loadedText[path]) {
+          throw new Error("文件已被外部修改，未覆盖。请先保留当前修改，再重新打开文档合并。");
+        }
+      }
       if (targetProject.rootHandle && window.UrhoxSave && window.UrhoxSave.ensureWritable) {
         var access = await window.UrhoxSave.ensureWritable(targetProject.rootHandle);
         if (!access.ok) {
@@ -387,8 +457,9 @@
           throw new Error("写盘权限已失效，请重新打开项目并允许读写。");
         }
       }
-      var result = await writeFile(file, text, path);
+      var result = await writeFile(file, text, path, { expectedText:loadedText[path] });
       if (!result.ok) throw new Error(result.error || "无法写回本地 json 文件");
+      loadedText[path] = text;
       if (project === targetProject && preview.currentPath === path) {
         if (preview.markClean) preview.markClean(json);
         else setDirty(path, JSON.stringify(preview.getJSON()) !== JSON.stringify(json));
@@ -516,6 +587,7 @@
         window.UrhoxPreview.loadTree(json, opts);
       }
     }
+    loadedText[file.path] = text;
     setDirty(file.path, false);
     renderAll();
   }
@@ -611,6 +683,7 @@
     if (!await allowLeave()) return false;
     await loadUiFile(draft.project.files[0], draft.project);
     project = draft.project;
+    entryQueries = { ui: "", project: "" };
     assets = draft.assets;
     resourceIndexReady = true;
     metaFiles = draft.metaFiles;
@@ -684,6 +757,7 @@
     var firstPath = files[0] && (files[0].webkitRelativePath || files[0].name || "");
     draft.project.name = firstPath.split("/")[0] || "本地项目";
     project = draft.project;
+    entryQueries = { ui: "", project: "" };
     assets = draft.assets;
     metaFiles = draft.metaFiles;
     resourceIndexReady = true;
@@ -851,6 +925,7 @@
   function revealAsset(ref) {
     var found = findAsset(ref);
     setBottomTab("project");
+    entryQueries.project = "";
     if (!found) return;
     selectedAsset = found.path;
     // Match insertPath's tree keys, not the manifest's display-only directory.

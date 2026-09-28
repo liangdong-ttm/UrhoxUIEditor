@@ -33,28 +33,8 @@
     }
   }
 
-  function preferredDeviceId(config, devices) {
-    config = config || {};
-    devices = devices || {};
-    var ids = Object.keys(devices);
-    var matching = ids.filter(function (id) {
-      var device = devices[id];
-      return config.orientation === "landscape"
-        ? device.width >= device.height
-        : config.orientation === "portrait" ? device.height >= device.width : true;
-    });
-    if (config.orientation === "landscape") {
-      return matching.find(function (id) { return id === "1080p-land"; }) || matching[0] || ids[0];
-    }
-    if (config.orientation === "portrait") {
-      return matching.find(function (id) { return id === "1080p"; }) || matching[0] || ids[0];
-    }
-    return ids.includes("1080p") ? "1080p" : ids[0];
-  }
-
   root.UrhoxProjectConfig = {
     normalize: normalize,
     parse: parse,
-    preferredDeviceId: preferredDeviceId,
   };
 })(window);
